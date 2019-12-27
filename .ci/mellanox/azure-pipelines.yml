@@ -53,6 +53,8 @@ jobs:
   - checkout: self
     submodules: true
   - bash: |
+      echo "DEBUG: non-master PR"
+  - bash: |
       set -eE
       [ "$(debug)" = "true" ] && set -x
       DOCKER_BUILD_CONTEXT_DIR="/tmp/ompi_build_docker_image_${BUILD_BUILDID}"
