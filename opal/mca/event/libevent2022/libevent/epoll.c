@@ -52,6 +52,7 @@
 #include "log-internal.h"
 #include "evmap-internal.h"
 #include "changelist-internal.h"
+#include "opal/threads/mutex.h"
 
 struct epollop {
 	struct epoll_event *events;
@@ -75,6 +76,7 @@ static const struct eventop epollops_changelist = {
 	EVENT_CHANGELIST_FDINFO_SIZE
 };
 
+opal_mutex_t epoll_libevent_mem_hooks_lock = OPAL_MUTEX_STATIC_INIT;
 
 static int epoll_nochangelist_add(struct event_base *base, evutil_socket_t fd,
     short old, short events, void *p);
@@ -445,12 +447,14 @@ epoll_dispatch(struct event_base *base, struct timeval *tv)
 		int new_nevents = epollop->nevents * 2;
 		struct epoll_event *new_events;
 
+		opal_mutex_lock(&epoll_libevent_mem_hooks_lock);
 		new_events = mm_realloc(epollop->events,
 		    new_nevents * sizeof(struct epoll_event));
 		if (new_events) {
 			epollop->events = new_events;
 			epollop->nevents = new_nevents;
 		}
+		opal_mutex_unlock(&epoll_libevent_mem_hooks_lock);
 	}
 
 	return (0);

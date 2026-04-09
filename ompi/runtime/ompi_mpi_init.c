@@ -138,6 +138,7 @@ int ompi_mpi_thread_requested = MPI_THREAD_SINGLE;
 int ompi_mpi_thread_provided = MPI_THREAD_SINGLE;
 
 opal_thread_t *ompi_mpi_main_thread = NULL;
+extern opal_mutex_t epoll_libevent_mem_hooks_lock;
 
 /*
  * These variables are for the MPI F08 bindings (F08 must bind Fortran
@@ -615,12 +616,15 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
         goto error;
     }
 
-    /* Acquire the PMIx thread lock while opening PML framework.  This
-     * dlopen's UCX-based components, which triggers the memory patcher
-     * to overwrite mmap/munmap entry points.  Holding the lock prevents
-     * PMIx progress callbacks from executing partially-overwritten code. */
+    /* Acquire locks while opening PML framework.  This dlopen's UCX-based
+     * components, which triggers the memory patcher to overwrite mmap/munmap
+     * entry points.  The PMIx lock prevents process_event callbacks from
+     * running, and the libevent lock prevents epoll_dispatch from
+     * calling mm_realloc (which calls mmap) during the patching window. */
     OPAL_PMIX_ACQUIRE_THREAD(&opal_pmix_base.lock);
+    OPAL_THREAD_LOCK(&epoll_libevent_mem_hooks_lock);
     ret = mca_base_framework_open(&ompi_pml_base_framework, 0);
+    OPAL_THREAD_UNLOCK(&epoll_libevent_mem_hooks_lock);
     OPAL_PMIX_RELEASE_THREAD(&opal_pmix_base.lock);
     
     if (OMPI_SUCCESS != ret) {
