@@ -614,7 +614,16 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
         error = "mca_bml_base_init() failed";
         goto error;
     }
-    if (OMPI_SUCCESS != (ret = mca_base_framework_open(&ompi_pml_base_framework, 0))) {
+
+    /* Acquire the PMIx thread lock while opening PML framework.  This
+     * dlopen's UCX-based components, which triggers the memory patcher
+     * to overwrite mmap/munmap entry points.  Holding the lock prevents
+     * PMIx progress callbacks from executing partially-overwritten code. */
+    OPAL_PMIX_ACQUIRE_THREAD(&opal_pmix_base.lock);
+    ret = mca_base_framework_open(&ompi_pml_base_framework, 0);
+    OPAL_PMIX_RELEASE_THREAD(&opal_pmix_base.lock);
+    
+    if (OMPI_SUCCESS != ret) {
         error = "mca_pml_base_open() failed";
         goto error;
     }
