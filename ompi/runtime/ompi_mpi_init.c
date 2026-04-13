@@ -514,6 +514,13 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
     }
     /* no select is required as this is a static framework */
 
+    /* Open the pml framework before the rte framework to avoid race condition
+       when create OPAL/PMIx threads */
+    if (OMPI_SUCCESS != (ret = mca_base_framework_open(&ompi_pml_base_framework, 0))) {
+        error = "mca_pml_base_open() failed";
+        goto error;
+    }
+    
     /* Setup RTE */
     if (OMPI_SUCCESS != (ret = ompi_rte_init(NULL, NULL))) {
         error = "ompi_mpi_init: ompi_rte_init failed";
@@ -614,10 +621,7 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
         error = "mca_bml_base_init() failed";
         goto error;
     }
-    if (OMPI_SUCCESS != (ret = mca_base_framework_open(&ompi_pml_base_framework, 0))) {
-        error = "mca_pml_base_open() failed";
-        goto error;
-    }
+
     if (OMPI_SUCCESS != (ret = mca_base_framework_open(&ompi_coll_base_framework, 0))) {
         error = "mca_coll_base_open() failed";
         goto error;

@@ -38,7 +38,8 @@ extern mca_base_framework_t opal_memory_base_framework;
 opal_common_ucx_module_t opal_common_ucx =
 {
     .progress_iterations = 100,
-    .opal_mem_hooks = 1,
+    /* Use UCX hooks by default */
+    .opal_mem_hooks = 0,
     .tls = NULL,
     .devices = NULL,
 };
