@@ -514,6 +514,8 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
     }
     /* no select is required as this is a static framework */
 
+    /* Open the pml framework before the rte framework to avoid race condition
+       when create OPAL/PMIx threads */
     if (OMPI_SUCCESS != (ret = mca_base_framework_open(&ompi_pml_base_framework, 0))) {
         error = "mca_pml_base_open() failed";
         goto error;
