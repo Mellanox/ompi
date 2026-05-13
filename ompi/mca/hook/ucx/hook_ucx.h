@@ -6,17 +6,15 @@
  *
  * $HEADER$
  */
+ 
 #ifndef MCA_HOOK_UCX_H
 #define MCA_HOOK_UCX_H
 
 #include "ompi_config.h"
-
 #include "ompi/constants.h"
-
-#include "opal/util/output.h"
-
 #include "ompi/mca/hook/hook.h"
 #include "ompi/mca/hook/base/base.h"
+#include "opal/util/output.h"
 
 BEGIN_C_DECLS
 

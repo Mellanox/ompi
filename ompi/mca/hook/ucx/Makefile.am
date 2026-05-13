@@ -12,7 +12,7 @@ AM_CPPFLAGS = $(hook_ucx_CPPFLAGS)
 local_sources = \
 	hook_ucx.h \
 	hook_ucx_component.c \
-	hook_ucx_fns.c
+	hook_ucx.c
 
 if MCA_BUILD_ompi_hook_ucx_DSO
 component_noinst =
