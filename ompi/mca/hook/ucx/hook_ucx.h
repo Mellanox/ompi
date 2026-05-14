@@ -6,7 +6,7 @@
  *
  * $HEADER$
  */
- 
+
 #ifndef MCA_HOOK_UCX_H
 #define MCA_HOOK_UCX_H
 
