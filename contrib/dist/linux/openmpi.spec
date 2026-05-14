@@ -303,6 +303,16 @@ Distribution: %{?_distribution:%{_distribution}}%{!?_distribution:%{_vendor}}
 Prefix: %{_prefix}
 Provides: mpi
 Provides: openmpi = %{version}
+# Force removal of any older openmpi RPM during upgrade transactions.
+# Without this, a host that holds an older openmpi (e.g. DOCA 2.9.4's
+# openmpi-3:4.1.7rc1-1.2410325 with Requires: libhcoll.so.1) blocks
+# `yum/zypper update doca-ofed` when the new DOCA repo no longer ships
+# the hcoll RPM that provided libhcoll.so.1 (SW#5031064).  The mofed
+# prefix added in #35 isolates new files in /usr/mpi/gcc/openmpi-<ver>/
+# so the old and new packages do not overwrite each other, but only
+# Obsoletes: tells the depsolver that the old payload (and its dangling
+# libhcoll.so.1 Requires) must go away in the same transaction.
+Obsoletes: openmpi < %{epoch}:%{version}-%{release}
 BuildRoot: /var/tmp/%{name}-%{version}-%{release}-root
 %if %{disable_auto_requires}
 AutoReq: no
@@ -350,6 +360,12 @@ Group: Development/Libraries
 Provides: mpi
 Provides: openmpi = %{version}
 Provides: openmpi-runtime = %{version}
+# See the Obsoletes: note on the main package above (SW#5031064).
+# The runtime sub-package also Provides: openmpi, so it must obsolete
+# the older openmpi RPM too -- otherwise zypper would still see the
+# pre-split openmpi-3:4.1.7rc1 as installed and dangling on libhcoll.so.1.
+Obsoletes: openmpi < %{epoch}:%{version}-%{release}
+Obsoletes: openmpi-runtime < %{epoch}:%{version}-%{release}
 %if %{disable_auto_requires}
 AutoReq: no
 %endif
@@ -394,6 +410,7 @@ Group: Development/Libraries
 AutoReq: no
 %endif
 Provides: openmpi-devel = %{version}
+Obsoletes: openmpi-devel < %{epoch}:%{version}-%{release}
 Requires: %{name}-runtime
 
 %description devel
@@ -425,6 +442,7 @@ Group: Development/Documentation
 AutoReq: no
 %endif
 Provides: openmpi-docs = %{version}
+Obsoletes: openmpi-docs < %{epoch}:%{version}-%{release}
 Requires: %{name}-runtime
 
 %description docs
