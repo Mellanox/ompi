@@ -1,4 +1,25 @@
-sphinx>=4.2.0
+# Open MPI documentation build dependencies.
+#
+# HPCINFRA-4211: the build matrix spans Python 3.6 (RHEL8, SLES15, RHEL7)
+# through Python 3.13 (Debian 13). No single Sphinx release covers that whole
+# range -- Sphinx 6+ needs Python >= 3.8, 7.2+ needs >= 3.9, 8+ needs >= 3.10 --
+# so an unbounded "sphinx>=4.2.0" lets pip (invoked with --upgrade) install a
+# Sphinx too new for the older interpreters, and the docs build fails on
+# Python 3.6-3.8. Conversely, hard-pinning to a single old release breaks the
+# newest interpreters (Debian 13 / Python 3.13). Use PEP 508 environment
+# markers so pip selects a compatible set per Python -- the same mechanism
+# upstream Open MPI already uses for its Python 3.6 backports.
+
+# Modern Python (>= 3.9): current Sphinx, unchanged from the upstream default.
+sphinx>=4.2.0 ; python_version >= "3.9"
+sphinx-rtd-theme ; python_version >= "3.9"
+docutils ; python_version >= "3.9"
+
+# Legacy Python (3.6-3.8): last Sphinx line that still runs on these
+# interpreters (Sphinx 5.x); docutils/sphinx-rtd-theme capped to match.
+sphinx>=4.2.0,<6 ; python_version < "3.9"
+sphinx-rtd-theme<2.0.0 ; python_version < "3.9"
+docutils<0.20 ; python_version < "3.9"
+
+# recommonmark has no Python-version-sensitive cap.
 recommonmark
-docutils
-sphinx-rtd-theme
