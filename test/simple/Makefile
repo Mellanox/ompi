@@ -5,11 +5,15 @@ PROGS = mpi_no_op mpi_barrier hello hello_nodename abort multi_abort comm_abort 
 		parallel_w8 parallel_w64 parallel_r8 parallel_r64 sio sendrecv_blaster early_abort \
 		debugger singleton_client_server intercomm_create spawn_tree init-exit77 mpi_info \
 		info_spawn server client ring binding badcoll attach xlib \
-		no-disconnect nonzero interlib pinterlib add_host
+		no-disconnect nonzero interlib pinterlib add_host \
+		osc_ucx_nb_accumulate osc_ucx_nb_accumulate_mt osc_ucx_nb_accumulate_noflush
 
 all: $(PROGS)
 
 # These guys need additional -I flags
+
+osc_ucx_nb_accumulate_mt: osc_ucx_nb_accumulate_mt.c
+	$(CC) $(CFLAGS) $^ -o $@ -pthread
 
 hello_output: hello_output.c
 	$(CC) $(CFLAGS) $(CFLAGS_INTERNAL) $^ -o $@
