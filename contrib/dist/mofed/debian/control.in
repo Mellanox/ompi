@@ -3,9 +3,10 @@ Section: net
 Priority: extra
 Homepage: https://www.open-mpi.org/
 Maintainer:  https://www.open-mpi.org
+Build-Depends: debhelper (>= 8), libevent-dev, libhwloc-dev
 
 Package: openmpi
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, ucx
 Architecture: all
 Description: Open MPI
  Open MPI is a project combining technologies and resources from

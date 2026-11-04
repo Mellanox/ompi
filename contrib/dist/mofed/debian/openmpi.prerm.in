@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# Copyright (c) 2026      NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# $COPYRIGHT$
+#
+# Additional copyrights may follow
+#
+# $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
+#
+# prerm for the MLNX_OFED / DOCA openmpi .deb.  See openmpi.postinst.in
+# for the rationale behind the update-alternatives entries, and for why
+# the groups are the distro's own "mpi" and "mpirun" rather than a
+# private "mpicc" one (SW#5193513).
+
+set -e
+
+MOFED_PREFIX="@MOFED_PREFIX@"
+
+case "$1" in
+    remove)
+        # Deregister only our own alternative from each group.  The
+        # distro's openmpi-bin entry, when present, survives and simply
+        # becomes the selected one again.
+        if [ -x "$MOFED_PREFIX/bin/mpirun" ]; then
+            update-alternatives --remove mpirun "$MOFED_PREFIX/bin/mpirun" || :
+        fi
+        if [ -x "$MOFED_PREFIX/bin/mpicc" ]; then
+            update-alternatives --remove mpi "$MOFED_PREFIX/bin/mpicc" || :
+        fi
+        ;;
+
+    upgrade|deconfigure|failed-upgrade)
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

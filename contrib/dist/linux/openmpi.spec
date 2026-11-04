@@ -53,6 +53,33 @@
 # type: bool (0/1)
 %{!?install_in_opt: %define install_in_opt 0}
 
+# Mellanox/HPC-X fork: install OpenMPI under
+# /usr/mpi/gcc/<name>-<version>/ -- the long-standing MLNX_OFED / DOCA
+# packaging convention.  DOCA 3.3.0 (openmpi 4.1.9a1) shipped at
+# /usr/mpi/gcc/openmpi-4.1.9a1/, which kept all bundled libraries in a
+# unique versioned subdir and never collided with system packages.
+#
+# Why the prefix change is required: OMPI 5.x bundles openpmix and
+# prrte and, with the upstream default --prefix=/usr, drops
+# libpmix.so.2 and libprrte.so.3 into /usr/lib64/ plus help texts
+# under /usr/share/{pmix,prte}/.  Those collide with the system pmix
+# and prrte-libs packages on RHEL 10 / ctyunos / SLES (SW#5008199,
+# SW#5010922).  Moving --prefix to /usr/mpi/gcc/openmpi-<ver>/ keeps
+# the bundled libs in a versioned subdir and removes the collision.
+#
+# The Ubuntu 24.04 libevent-dev / evdns.h collision (SW#5009387) is a
+# separate symptom of the same upstream --prefix=/usr default, but it
+# only manifests when libevent is bundled (--with-libevent=internal).
+# With all_external_3rd_party=1 (this spec's default) libevent is
+# never bundled, so SW#5009387 is fixed independently of mofed_prefix.
+#
+# install_in_opt takes priority if also set (=> /opt/<name>/<version>).
+# Set mofed_prefix=0 (and install_in_opt=0) to fall back to the
+# upstream default of --prefix=/usr -- but that path causes the
+# pmix/prrte file collisions described above.
+# type: bool (0/1)
+%{!?mofed_prefix: %define mofed_prefix 1}
+
 # This specfile expects to find all required 3rd party packages
 # (Libevent, Hwloc, PMIx, PRRTE) externally, and will not use the
 # internal/embedded copies of these packages.  This behavior is
@@ -68,8 +95,13 @@
 
 # Define this if you want this RPM to install environment setup
 # shell scripts.
+# Mellanox/HPC-X fork: default flipped from upstream 0 -> 1, because
+# with mofed_prefix=1 (this fork's default) the OMPI binaries live
+# under /usr/mpi/gcc/openmpi-<version>/bin/ which is not on $PATH by
+# default; mpivars.{sh,csh} let users `source` them to set up the
+# environment.  Still overridable via rpmbuild --define.
 # type: bool (0/1)
-%{!?install_shell_scripts: %define install_shell_scripts 0}
+%{!?install_shell_scripts: %define install_shell_scripts 1}
 # type: string (root path to install shell scripts)
 %{!?shell_scripts_path: %define shell_scripts_path %{_bindir}}
 # type: string (base name of the shell scripts)
@@ -154,11 +186,6 @@
 # type: bool (0/1)
 %{!?allow_fortify_source: %define allow_fortify_source 1}
 
-# Select md5 packing algorithm, that src.rpm created on one distro can
-# be read on another.
-%global _binary_filedigest_algorithm 1
-%global _source_filedigest_algorithm 1
-
 # Define this to 1 if you want to keep libtool archive files
 # Default is 0 (remove *.la files)
 # type: bool (0/1)
@@ -195,6 +222,22 @@
 # where they want it to go -- the modulefile is a bit different in
 # that the user may want it outside of /opt).
 %{!?modulefile_path: %define modulefile_path /opt/%{name}/%{version}/share/openmpi/modulefiles}
+%endif
+
+# Mellanox/HPC-X fork: when mofed_prefix=1 (the default in this fork)
+# and install_in_opt is not also set, install everything under
+# /usr/mpi/gcc/<name>-<version>/ (the MLNX_OFED / DOCA convention).
+%if %{mofed_prefix}
+%if !%{install_in_opt}
+%define _prefix /usr/mpi/gcc/%{name}-%{version}
+%define _sysconfdir %{_prefix}/etc
+%define _libdir %{_prefix}/lib
+%define _includedir %{_prefix}/include
+%define _mandir %{_prefix}/share/man
+%define _pkgdatadir %{_prefix}/share/openmpi
+%define _defaultdocdir %{_prefix}/share/doc
+%{!?modulefile_path: %define modulefile_path %{_prefix}/share/openmpi/modulefiles}
+%endif
 %endif
 
 %if %{all_external_3rd_party}
@@ -248,6 +291,7 @@
 
 Summary: A powerful implementation of MPI/SHMEM
 Name: %{?_name:%{_name}}%{!?_name:openmpi}
+Epoch: %{?epoch:%{epoch}}%{!?epoch:3}
 Version: $VERSION
 Release: 1%{?dist}
 License: BSD
@@ -275,6 +319,7 @@ Requires: %{modules_rpm_name}
 %if %{use_mpi_selector}
 Requires: %{mpi_selector_rpm_name}
 %endif
+Requires: ucx
 
 %description
 Open MPI is an open source implementation of the Message Passing
@@ -691,6 +736,165 @@ test "x$RPM_BUILD_ROOT" != "x" && rm -rf $RPM_BUILD_ROOT
 %preun
 %{mpi_selector} --unregister %{name}-%{version} --yes || \
       /bin/true > /dev/null 2> /dev/null
+%endif
+
+#############################################################################
+#
+# Post Install / Post Uninstall Section (update-alternatives,
+# all-in-one rpm)
+#
+# All-in-one twin of the update-alternatives hook below (SW#5150809).
+# build_all_in_one_rpm defaults to 1 in this spec, so the single-rpm
+# path is what a default rpmbuild invocation takes -- without this arm
+# the wrappers would stay off $PATH exactly there, and only the
+# sub-package (%post runtime) variant would carry the fix.  Same
+# alternatives group, same priority 50, same defensive guards as that
+# hook and as the .deb postinst.
+#
+# Deliberately a self-contained additive block rather than a merge into
+# the upstream mpi_selector %post above: the fork's delta against the
+# upstream openmpi.spec stays pure-insertion and survives v5.0.x
+# rebases without conflicts.  The !use_mpi_selector guard makes the two
+# %post declarations mutually exclusive by construction (no
+# duplicate-%post rpmbuild error); when mpi_selector is enabled,
+# wrapper exposure is that mechanism's job anyway.
+#############################################################################
+%if !%{use_mpi_selector}
+%if %{build_all_in_one_rpm}
+%if %(test "%{_prefix}" = "/usr" && echo 0 || echo 1)
+%post
+# update-alternatives lives at /usr/sbin/ on RHEL/Rocky (chkconfig), at
+# /usr/bin/ on SUSE; scriptlet PATH is not guaranteed, so resolve and
+# invoke the absolute path.
+#
+# Group layout mirrors the distro's own openmpi packaging -- two groups,
+# "mpirun" (master link /usr/bin/mpirun) and "mpi" (master link
+# /usr/bin/mpicc) -- rather than one private "mpicc" group carrying
+# mpirun as a slave.  update-alternatives is a cross-package database:
+# a name cannot be a group master and another group's slave at the same
+# time, and the private layout deadlocked both install orders against
+# the distro openmpi (SW#5193513).  Priority 60 beats the distro's 50
+# deliberately; 50 would tie and make the winner install-order
+# dependent.  ompi_info is not exposed because the distro package ships
+# it as a real file at that path.
+UA=/usr/sbin/update-alternatives
+[ -x "$UA" ] || UA=/usr/bin/update-alternatives
+if [ "$1" -ge 1 ] && [ -x "$UA" ]; then
+    # SW#5193513: retire the malformed group shipped in DOCA
+    # 3.5.0-057000 and later, otherwise an affected host stays broken
+    # across the upgrade that carries this fix.
+    "$UA" --remove-all mpicc 2>/dev/null || :
+
+    if [ -x %{_prefix}/bin/mpirun ]; then
+        "$UA" \
+            --install /usr/bin/mpirun     mpirun   %{_prefix}/bin/mpirun   60 \
+            --slave   /usr/bin/mpiexec    mpiexec  %{_prefix}/bin/mpiexec     \
+            || :
+    fi
+
+    if [ -x %{_prefix}/bin/mpicc ]; then
+        "$UA" \
+            --install /usr/bin/mpicc      mpi      %{_prefix}/bin/mpicc    60 \
+            --slave   /usr/bin/mpicxx     mpicxx   %{_prefix}/bin/mpicxx      \
+            --slave   /usr/bin/mpic++     mpic++   %{_prefix}/bin/mpic++      \
+            --slave   /usr/bin/mpif77     mpif77   %{_prefix}/bin/mpif77      \
+            --slave   /usr/bin/mpif90     mpif90   %{_prefix}/bin/mpif90      \
+            --slave   /usr/bin/mpifort    mpifort  %{_prefix}/bin/mpifort     \
+            || :
+    fi
+fi
+exit 0
+
+%postun
+# Drop our alternatives on final removal only ("$1" -eq 0), same
+# semantics as the %postun runtime variant below and the .deb prerm.
+UA=/usr/sbin/update-alternatives
+[ -x "$UA" ] || UA=/usr/bin/update-alternatives
+if [ "$1" -eq 0 ] && [ -x "$UA" ]; then
+    "$UA" --remove mpirun %{_prefix}/bin/mpirun 2>/dev/null || true
+    "$UA" --remove mpi    %{_prefix}/bin/mpicc  2>/dev/null || true
+fi
+exit 0
+%endif
+%endif
+%endif
+
+#############################################################################
+#
+# Post Install / Pre Uninstall Section (update-alternatives)
+#
+# When the OMPI wrappers do not live under /usr/bin/ (i.e. mofed_prefix=1
+# or install_in_opt=1), register them via update-alternatives so that
+# downstream consumers that resolve `mpicc` via $PATH (meson's
+# find_program(), AC_PATH_PROG, plain `mpicc` invocations in CI scripts)
+# keep working without having to source mpivars.sh first.  Mirrors the
+# Debian-side dpkg update-alternatives hook (SW#5030263 reproduces on
+# the Rocky 9.2 bfb the same way it does on the Ubuntu 24.04 / Debian 12
+# bfbs -- this RPM hook is the symmetric fix).
+#
+# Priority 50 matches Debian stock openmpi-bin and the DEB side of this
+# packaging, keeping behaviour predictable when multiple openmpi
+# implementations co-exist.  Only the wrapper binaries are exposed under
+# /usr/bin/; libpmix.so.2 / libprrte.so.3 / bundled libevent stay under
+# the versioned prefix, so SW#5008199 / SW#5009387 / SW#5010922 remain
+# closed.
+#
+# Skip the registration when --prefix=/usr (mofed_prefix=0 +
+# install_in_opt=0), since the wrappers already live in /usr/bin/ and an
+# alternatives entry would point a symlink at itself.  The
+# build_all_in_one_rpm path is covered by the self-contained
+# %post/%postun pair above (SW#5150809), kept separate so the fork's
+# delta against the upstream spec stays pure-insertion.
+#############################################################################
+%if !%{build_all_in_one_rpm}
+%if %(test "%{_prefix}" = "/usr" && echo 0 || echo 1)
+# Defensive guards:
+#   * Two possible binary paths -- update-alternatives ships at
+#     /usr/sbin/update-alternatives on RHEL/Rocky/AlmaLinux (chkconfig
+#     package), at /usr/bin/update-alternatives on SUSE/SLES (the
+#     update-alternatives package), and is missing on some minimal /
+#     UBI / distroless images.  Either path is invoked via PATH so we
+#     don't hardcode one.
+#   * `exit 0` at the end keeps the scriptlet rc=0 even if a slave
+#     entry fails (e.g. mpif77 not shipped in a particular build
+#     config), so RPM does not warn `scriptlet failed` and CI that
+#     reads the rc does not flag the install.
+#   * The two groups joined here ("mpirun" and "mpi") are the distro's
+#     own; a private "mpicc" group carrying mpirun as a slave breaks
+#     both install orders against the distro openmpi (SW#5193513).
+%post runtime
+if [ "$1" -ge 1 ]; then
+    if [ -x /usr/sbin/update-alternatives ] || [ -x /usr/bin/update-alternatives ]; then
+        update-alternatives --remove-all mpicc 2>/dev/null || :
+
+        if [ -x %{_prefix}/bin/mpirun ]; then
+            update-alternatives \
+                --install /usr/bin/mpirun     mpirun   %{_prefix}/bin/mpirun   60 \
+                --slave   /usr/bin/mpiexec    mpiexec  %{_prefix}/bin/mpiexec     \
+                || :
+        fi
+
+        if [ -x %{_prefix}/bin/mpicc ]; then
+            update-alternatives \
+                --install /usr/bin/mpicc      mpi      %{_prefix}/bin/mpicc    60 \
+                --slave   /usr/bin/mpicxx     mpicxx   %{_prefix}/bin/mpicxx      \
+                --slave   /usr/bin/mpic++     mpic++   %{_prefix}/bin/mpic++      \
+                --slave   /usr/bin/mpif77     mpif77   %{_prefix}/bin/mpif77      \
+                --slave   /usr/bin/mpif90     mpif90   %{_prefix}/bin/mpif90      \
+                --slave   /usr/bin/mpifort    mpifort  %{_prefix}/bin/mpifort     \
+                || :
+        fi
+    fi
+fi
+exit 0
+
+%postun runtime
+if [ "$1" -eq 0 ] && command -v update-alternatives >/dev/null 2>&1; then
+    update-alternatives --remove mpirun %{_prefix}/bin/mpirun 2>/dev/null || true
+    update-alternatives --remove mpi    %{_prefix}/bin/mpicc  2>/dev/null || true
+fi
+exit 0
+%endif
 %endif
 
 #############################################################################
