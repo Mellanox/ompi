@@ -8,6 +8,14 @@ Open MPI version v6.0.0
 --------------------------
 :Date: ...fill me in...
 
+- HPC-X downstream branch: carry the versioned RPM/DEB installation and
+  wrapper alternatives policy, enable UCC by default at priority 100,
+  adapt the Mellanox platform and early UCX hook to Open MPI 6, and allow
+  MPI startup with the partition component disabled.  Add optional
+  third-party patch processing to autogen without carrying any patch
+  payloads or changing dependency pins.  See :doc:`the HPC-X branch
+  notes </installing-open-mpi/hpcx>` for these downstream defaults.
+
 - Updated the embedded hwloc to v2.15.0.
 
 - OpenSHMEM static symmetric storage is now limited to writable loadable
