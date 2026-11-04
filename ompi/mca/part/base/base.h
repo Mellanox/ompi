@@ -12,6 +12,7 @@
  *                         All rights reserved.
  * Copyright (c) 2013      Los Alamos National Security, LLC.  All rights reserved.
  * Copyright (c) 2020      Sandia National Laboratories. All rights reserved.
+ * Copyright (c) 2026      NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -28,7 +29,6 @@
 #include "ompi/mca/mca.h"
 #include "opal/mca/base/mca_base_framework.h"
 #include "opal/class/opal_list.h"
-#include "opal/class/opal_pointer_array.h"
 
 #include "ompi/mca/part/part.h"
 
@@ -65,7 +65,6 @@ OMPI_DECLSPEC int mca_part_base_finalize(void);
  */
 OMPI_DECLSPEC extern mca_part_base_component_t mca_part_base_selected_component;
 OMPI_DECLSPEC extern mca_part_base_module_t mca_part;
-OMPI_DECLSPEC extern opal_pointer_array_t mca_part_base_part;
 
 END_C_DECLS
 

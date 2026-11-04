@@ -19,6 +19,7 @@ Building and installing Open MPI
    make-targets
    installation-location
    custom-components
+   hpcx
    updating
    packagers
    sysadmins

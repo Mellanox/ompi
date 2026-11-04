@@ -10,6 +10,7 @@
  * Copyright (c) 2022      IBM Corporation.  All rights reserved.
  * Copyright (c) 2023      NVIDIA Corporation.  All rights reserved.
  *
+ * Copyright (c) 2026      NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -42,7 +43,7 @@ extern mca_base_framework_t opal_memory_base_framework;
 opal_common_ucx_module_t opal_common_ucx =
 {
     .progress_iterations = 100,
-    .opal_mem_hooks = 1,
+    .opal_mem_hooks = 0,
     .tls = NULL,
     .devices = NULL,
 };

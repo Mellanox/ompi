@@ -1,4 +1,5 @@
-enable_mca_no_build=coll-ml,btl-uct
+enable_mca_no_build=btl-uct,coll-han,coll-adapt,part-persist
+enable_mca_dso=coll-accelerator,accelerator-cuda,btl-smcuda,rcache-gpusm,rcache-rgpusm,coll-ucc,pml-ucx,osc-ucx
 enable_debug_symbols=yes
 # orterun/mpirun-prefix-by-default is deprecated and intentionally not replaced
 # by enable_prte_prefix_by_default here: platform variables are sourced into the

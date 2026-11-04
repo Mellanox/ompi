@@ -12,6 +12,7 @@
 #                         All Rights reserved.
 # Copyright (c) 2025      Nanook Consulting  All rights reserved.
 # Copyright (c) 2025      Jeffrey M. Squyres.  All rights reserved.
+# Copyright (c) 2026      NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -1490,6 +1491,49 @@ Perhaps you forgot to \"git clone --recursive ...\", or you need to
             }
         }
     }
+}
+
+#---------------------------------------------------------------------------
+
+# Apply optional HPC-X patches before configuring third-party sources.
+++$step;
+verbose "\n$step. Applying local patches to 3rd-party submodules\n\n";
+
+my $patches_dir = "contrib/patches";
+if (-d $patches_dir) {
+    opendir(my $pdh, $patches_dir) || my_die "Can't open $patches_dir";
+    my @subdirs_to_patch = sort grep { !/^\./ && -d "$patches_dir/$_" } readdir($pdh);
+    closedir($pdh);
+
+    foreach my $submod (@subdirs_to_patch) {
+        my $patch_dir = "$patches_dir/$submod";
+        opendir(my $sdh, $patch_dir) || my_die "Can't open $patch_dir";
+        my @patchfiles = map { "$patch_dir/$_" }
+            sort grep { /\.patch$/ && -f "$patch_dir/$_" } readdir($sdh);
+        closedir($sdh);
+        next unless @patchfiles;
+
+        my $submod_dir = "3rd-party/$submod";
+        -d $submod_dir || my_die "Patch target $submod_dir is missing";
+        my $start = Cwd::cwd();
+        chdir($submod_dir) || my_die "Can't chdir to $submod_dir";
+        foreach my $pfile (@patchfiles) {
+            my $abs_pfile = "$start/$pfile";
+            my @args = ("--batch", "--fuzz=0", "-p1", "-i", $abs_pfile);
+            verbose "--- Checking $pfile\n";
+            if (0 == system($patch_prog, "--dry-run", "--forward", @args)) {
+                0 == system($patch_prog, "--forward", @args)
+                    || my_die "Failed to apply $pfile; inspect $submod_dir";
+            } elsif (0 == system($patch_prog, "--dry-run", "--reverse", @args)) {
+                verbose "    (already applied)\n";
+            } else {
+                my_die "Patch $pfile does not match $submod_dir; refusing to continue";
+            }
+        }
+        chdir($start) || my_die "Can't chdir to $start";
+    }
+} else {
+    verbose "=== No contrib/patches directory found, skipping\n";
 }
 
 #---------------------------------------------------------------------------
