@@ -11,12 +11,14 @@
  *                         All rights reserved.
  * Copyright (c) 2006      Voltaire All rights reserved.
  * Copyright (c) 2010      Oracle and/or its affiliates.  All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  *
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #ifndef OPAL_ALIGN_H
@@ -32,7 +34,9 @@
 #    include <stddef.h>
 #    define OPAL_ALIGN_MIN (_Alignof(max_align_t))
 #else
-#    if defined(OPAL_ALIGNMENT___FLOAT128)
+#    if defined(OPAL_ALIGNMENT__FLOAT128)
+#        define OPAL_ALIGN_MIN (OPAL_ALIGNMENT__FLOAT128)
+#    elif defined(OPAL_ALIGNMENT___FLOAT128)
 #        define OPAL_ALIGN_MIN (OPAL_ALIGNMENT___FLOAT128)
 #    elif defined(OPAL_ALIGNMENT_LONG_DOUBLE_COMPLEX)
 #        define OPAL_ALIGN_MIN (OPAL_ALIGNMENT_LONG_DOUBLE_COMPLEX)

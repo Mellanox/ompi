@@ -6,6 +6,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 /*
@@ -45,11 +46,10 @@
 #define OMPI_FORTRAN_BIGCOUNT_ARRAY_CLEANUP_NONBLOCKING(array, tmp_array, c_request, c_ierr, idx) \
     do { \
         if (MPI_SUCCESS == (c_ierr)) { \
-            ompi_coll_base_nbc_request_t* nb_request = (ompi_coll_base_nbc_request_t*)c_request; \
             if ((void *)(array) != (void *)(tmp_array) && (tmp_array) != NULL) { \
-                nb_request->data.release_arrays[(idx)++] = tmp_array; \
+                ompi_coll_base_append_array_to_release((c_request), (tmp_array)); \
+                (idx)++;                                                         \
             } \
-            nb_request->data.release_arrays[idx] = NULL; \
         } else { \
             OMPI_FORTRAN_BIGCOUNT_ARRAY_CLEANUP((array), (tmp_array)); \
         } \

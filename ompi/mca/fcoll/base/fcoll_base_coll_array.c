@@ -14,11 +14,13 @@
  * Copyright (c) 2017      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2017      IBM Corporation. All rights reserved.
+ * Copyright (c) 2026      Stony Brook University.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -50,7 +52,6 @@ int ompi_fcoll_base_coll_allgatherv_array (void *sbuf,
     int err = OMPI_SUCCESS;
     ptrdiff_t extent, lb;
     int i, rank, j;
-    int *tmp_rcounts = NULL, *tmp_disps = NULL;
     char *send_buf = NULL;
     struct ompi_datatype_t *newtype, *send_type;
 
@@ -93,24 +94,11 @@ int ompi_fcoll_base_coll_allgatherv_array (void *sbuf,
         return err;
     }
 
-    /* TODO:BIGCOUNT: remove tmp_rcounts and tmp_disps once the ompi_datatype
-     * interface is udpated to use size_t/ptrdiff_t
-     */
-    tmp_rcounts = (int *)malloc(2 * procs_per_group * sizeof(int));
-    if (NULL == tmp_rcounts) {
-        return OMPI_ERR_OUT_OF_RESOURCE;
-    }
-    tmp_disps = tmp_rcounts + procs_per_group;
-    for (i = 0; i < procs_per_group; i++) {
-        tmp_rcounts[i] = (int) rcounts[i];
-        tmp_disps[i] = (int) disps[i];
-    }
     err = ompi_datatype_create_indexed (procs_per_group,
-                                        tmp_rcounts,
-                                        tmp_disps,
+                                        OMPI_COUNT_ARRAY_CREATE(rcounts),
+                                        OMPI_DISP_ARRAY_CREATE(disps),
                                         rdtype,
                                         &newtype);
-    free(tmp_rcounts);
     if (MPI_SUCCESS != err) {
         return err;
     }

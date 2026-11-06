@@ -3,6 +3,12 @@
 #
 
 prototype_files = \
+        abi_get_version.c.in \
+        abi_get_fortran_booleans.c.in \
+        abi_get_fortran_info.c.in \
+        abi_get_info.c.in \
+        abi_set_fortran_booleans.c.in \
+        abi_set_fortran_info.c.in \
         accumulate_ts.c.in \
         allgather_init_ts.c.in \
         allgather_ts.c.in \
@@ -160,7 +166,13 @@ prototype_files = \
         session_iflush_buffer.c.in \
         ssend_init_ts.c.in \
         ssend_ts.c.in \
+        status_get_error.c.in \
+        status_get_source.c.in \
+        status_get_tag.c.in \
         status_set_elements.c.in \
+        status_set_error.c.in \
+        status_set_source.c.in \
+        status_set_tag.c.in \
         testany.c.in \
         type_contiguous.c.in \
         type_create_darray.c.in \

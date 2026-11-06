@@ -18,6 +18,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 #include "opal_config.h"
 
@@ -110,6 +111,8 @@ static int mca_btl_self_component_register(void)
     mca_btl_self.btl_flags = MCA_BTL_FLAGS_RDMA | MCA_BTL_FLAGS_SEND_INPLACE | MCA_BTL_FLAGS_SEND;
     /* for self, remote completion is local completion */
     mca_btl_self.btl_flags |= MCA_BTL_FLAGS_RDMA_REMOTE_COMPLETION;
+    /* put/get go directly to/from accelerator memory, no host staging */
+    mca_btl_self.btl_flags |= MCA_BTL_FLAGS_ACCELERATOR_RDMA;
     mca_btl_self.btl_bandwidth = 100;
     mca_btl_self.btl_latency = 0;
     mca_btl_base_param_register(&mca_btl_self_component.super.btl_version, &mca_btl_self);

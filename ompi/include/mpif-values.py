@@ -11,11 +11,13 @@
 # Copyright (c) 2025      Jeffrey M. Squyres.  All rights reserved.
 # Copyright (c) 2025      Triad National Security, LLC. All rights
 #                         reserved.
+# Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 # This script creates header files to be compiled with the various
@@ -301,6 +303,9 @@ constants = {
     'MPI_ERR_SESSION': 78,
     'MPI_ERR_VALUE_TOO_LARGE': 79,
     'MPI_ERR_ERRHANDLER': 80,
+    'MPI_T_ERR_NOT_ACCESSIBLE': 81,
+    'MPI_T_ERR_NOT_SUPPORTED': 82,
+    'MPI_ERR_ABI': 83,
     'MPI_ERR_LASTCODE': 92,
     'MPI_IDENT': 0,
     'MPI_CONGRUENT': 1,
@@ -342,6 +347,7 @@ constants = {
     'MPI_COMM_TYPE_HW_UNGUIDED': 12,
     'MPI_COMM_TYPE_HW_GUIDED': 13,
     'MPI_COMM_TYPE_RESOURCE_GUIDED': 14,
+    'OMPI_COMM_TYPE_NVLINK': 15,
 }
 
 # IO Constants

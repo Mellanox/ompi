@@ -13,11 +13,13 @@
  * Copyright (c) 2016-2019 IBM Corporation. All rights reserved.
  * Copyright (c) 2024      Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 #include "ompi_config.h"
 
@@ -38,8 +40,8 @@ mca_io_base_module_3_0_0_t mca_io_ompio_module = {
     mca_io_ompio_file_preallocate,
     mca_io_ompio_file_get_size,
     mca_io_ompio_file_get_amode,
-    NULL,
-    NULL,
+    mca_io_ompio_file_set_info,
+    mca_io_ompio_file_get_info,
 
     mca_io_ompio_file_set_view,
     mca_io_ompio_file_get_view,

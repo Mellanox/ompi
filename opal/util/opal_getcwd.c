@@ -1,10 +1,12 @@
 /*
  * Copyright (c) 2007      Cisco Systems, Inc.  All rights reserved.
+ * Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "opal_config.h"
@@ -83,9 +85,10 @@ int opal_getcwd(char *buf, size_t size)
 #endif
 
     /* If we got here, pwd is pointing to the result that we want to
-       give.  Ensure the user's buffer is long enough.  If it is, copy
-       in the value and be done. */
-    if (strlen(pwd) > size) {
+       give.  Ensure the user's buffer is long enough (it must hold the
+       string *and* a NUL terminator, so it needs strlen(pwd)+1 bytes).
+       If it is long enough, copy in the value and be done. */
+    if (strlen(pwd) >= size) {
         /* if it isn't big enough, give them as much
          * of the basename as possible
          */

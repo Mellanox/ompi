@@ -7,6 +7,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 #include "ompi_config.h"
 
@@ -15,7 +16,7 @@
 #include "ompi/mpiext/ftmpi/c/mpiext_ftmpi_c.h"
 #include "ompi/mpiext/ftmpi/mpif-h/prototypes_mpi.h"
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPIX_COMM_REVOKE = ompix_comm_revoke_f
 #pragma weak pmpix_comm_revoke = ompix_comm_revoke_f
 #pragma weak pmpix_comm_revoke_ = ompix_comm_revoke_f
@@ -30,7 +31,7 @@
 #pragma weak MPIX_Comm_revoke_f = ompix_comm_revoke_f
 #pragma weak MPIX_Comm_revoke_f08 = ompix_comm_revoke_f
 
-#else /* No weak symbols */
+#else /* No weak aliases */
 OMPI_GENERATE_F77_BINDINGS(PMPIX_COMM_REVOKE,
                         pmpix_comm_revoke,
                         pmpix_comm_revoke_,

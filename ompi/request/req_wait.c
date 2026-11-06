@@ -24,6 +24,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -65,7 +66,7 @@ int ompi_request_default_wait(
     if( req->req_persistent ) {
         if( req->req_state == OMPI_REQUEST_INACTIVE ) {
             if (MPI_STATUS_IGNORE != status) {
-                OMPI_COPY_STATUS(status, ompi_status_empty, false);
+                OMPI_COPY_STATUS(status, ompi_status_empty, true);
             }
             return OMPI_SUCCESS;
         }
@@ -103,6 +104,7 @@ int ompi_request_default_wait_any(size_t count,
 
 recheck:
     WAIT_SYNC_INIT(&sync, 1);
+    opal_atomic_wmb();  /* release: sync struct init must be visible before CAS publishes &sync */
 
     num_requests_null_inactive = 0;
     for (i = 0; i < count; i++) {
@@ -138,7 +140,7 @@ recheck:
     if(num_requests_null_inactive == count) {
         *index = MPI_UNDEFINED;
         if (MPI_STATUS_IGNORE != status) {
-            OMPI_COPY_STATUS(status, ompi_status_empty, false);
+            OMPI_COPY_STATUS(status, ompi_status_empty, true);
         }
         /* No signal-in-flight can be in this case */
         WAIT_SYNC_RELEASE_NOWAIT(&sync);
@@ -238,6 +240,7 @@ int ompi_request_default_wait_all( size_t count,
 
 recheck:
     WAIT_SYNC_INIT(&sync, count);
+    opal_atomic_wmb();  /* release: sync struct init must be visible before CAS publishes &sync */
     rptr = requests;
     for (i = 0; i < count; i++) {
         void *_tmp_ptr = REQUEST_PENDING;
@@ -466,6 +469,7 @@ int ompi_request_default_wait_some(size_t count,
 
   recheck:
     WAIT_SYNC_INIT(&sync, 1);
+    opal_atomic_wmb();  /* release: sync struct init must be visible before CAS publishes &sync */
 
     *outcount = 0;
 

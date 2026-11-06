@@ -3,11 +3,13 @@
  * Copyright (c) 2010-2019 The University of Tennessee and the University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 #include "ompi_config.h"
 
@@ -17,7 +19,7 @@
 #include "ompi/mpiext/ftmpi/c/mpiext_ftmpi_c.h"
 #include "ompi/mpiext/ftmpi/mpif-h/prototypes_mpi.h"
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPIX_COMM_IS_REVOKED = ompix_comm_is_revoked_f
 #pragma weak pmpix_comm_is_revoked = ompix_comm_is_revoked_f
 #pragma weak pmpix_comm_is_revoked_ = ompix_comm_is_revoked_f
@@ -32,7 +34,7 @@
 #pragma weak MPIX_Comm_is_revoked_f = ompix_comm_is_revoked_f
 #pragma weak MPIX_Comm_is_revoked_f08 = ompix_comm_is_revoked_f
 
-#else /* No weak symbols */
+#else /* No weak aliases */
 OMPI_GENERATE_F77_BINDINGS(PMPIX_COMM_IS_REVOKED,
                         pmpix_comm_is_revoked,
                         pmpix_comm_is_revoked_,
@@ -58,4 +60,6 @@ void ompix_comm_is_revoked_f(MPI_Fint *comm, ompi_fortran_logical_t *flag, MPI_F
 
     *ierr = OMPI_INT_2_FINT(PMPIX_Comm_is_revoked(c_comm,
                                                   OMPI_LOGICAL_SINGLE_NAME_CONVERT(flag)));
+
+    OMPI_SINGLE_INT_2_LOGICAL(flag);
 }

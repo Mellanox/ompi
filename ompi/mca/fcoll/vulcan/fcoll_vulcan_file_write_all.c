@@ -17,14 +17,17 @@
  * Copyright (c) 2024      Triad National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2024      Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2026      Stony Brook University.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
+#include "ompi/runtime/mpiruntime.h"
 #include "fcoll_vulcan.h"
 #include "fcoll_vulcan_internal.h"
 
@@ -199,7 +202,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
      ** 3. Determine the total amount of data to be written and no. of cycles
      **************************************************************************/
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-    start_comm_time = MPI_Wtime();
+    start_comm_time = ompi_wtime();
 #endif
     ret = fh->f_comm->c_coll->coll_allreduce (MPI_IN_PLACE,
                                               broken_total_lengths,
@@ -213,7 +216,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
     }
     
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-    end_comm_time = MPI_Wtime();
+    end_comm_time = ompi_wtime();
     comm_time += (end_comm_time - start_comm_time);
 #endif
     
@@ -227,14 +230,14 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
         }
     }
     
-    result_counts = (int *) malloc ( fh->f_num_aggrs * fh->f_procs_per_group * sizeof(int) );
+    result_counts = (int *) malloc ( (size_t)fh->f_num_aggrs * fh->f_procs_per_group * sizeof(int) );
     if ( NULL == result_counts ) {
         ret = OMPI_ERR_OUT_OF_RESOURCE;
         goto exit;
     }
     
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-    start_comm_time = MPI_Wtime();
+    start_comm_time = ompi_wtime();
 #endif
     ret = fh->f_comm->c_coll->coll_allgather(broken_counts,
                                                  fh->f_num_aggrs,
@@ -248,7 +251,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
         goto exit;
     }
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-    end_comm_time = MPI_Wtime();
+    end_comm_time = ompi_wtime();
     comm_time += (end_comm_time - start_comm_time);
 #endif
     
@@ -306,7 +309,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
         }
     
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-        start_comm_time = MPI_Wtime();
+        start_comm_time = ompi_wtime();
 #endif
         OMPI_COUNT_ARRAY_INIT(&fview_count_desc, aggr_data[i]->fview_count);
         OMPI_DISP_ARRAY_INIT(&displs_desc, displs);
@@ -323,7 +326,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
             goto exit;
         }
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-        end_comm_time = MPI_Wtime();
+        end_comm_time = ompi_wtime();
         comm_time += (end_comm_time - start_comm_time);
 #endif
         
@@ -446,11 +449,11 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
         }
     
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-        start_exch = MPI_Wtime();
+        start_exch = ompi_wtime();
 #endif
     }
 
-    reqs = (ompi_request_t **)malloc ((fh->f_procs_per_group + 1 )*fh->f_num_aggrs *sizeof(ompi_request_t *));
+    reqs = (ompi_request_t **)malloc (((size_t)fh->f_procs_per_group + 1 )*fh->f_num_aggrs *sizeof(ompi_request_t *));
     if ( NULL == reqs ) {
         opal_output (1, "OUT OF MEMORY\n");
         ret = OMPI_ERR_OUT_OF_RESOURCE;
@@ -485,7 +488,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
         }
     }
 
-    ret = ompi_request_wait_all ( (fh->f_procs_per_group + 1 )*fh->f_num_aggrs,
+    ret = ompi_request_wait_all ( ((size_t)fh->f_procs_per_group + 1 )*fh->f_num_aggrs,
                                   reqs, MPI_STATUS_IGNORE);
 
     for (index = 1; index < cycles; index++) {
@@ -493,7 +496,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
 
         if(NOT_AGGR_INDEX != aggr_index) {
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-            start_write_time = MPI_Wtime();
+            start_write_time = ompi_wtime();
 #endif
             ret = write_init (fh, fh->f_aggr_list[aggr_index], aggr_data[aggr_index],
                               write_synch_type, &req_iwrite, use_accelerator_buffer);
@@ -501,7 +504,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
                 goto exit;
             }
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-            end_write_time = MPI_Wtime();
+            end_write_time = ompi_wtime();
             write_time += end_write_time - start_write_time;
 #endif
         }
@@ -514,7 +517,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
             }
         }
 
-        ret = ompi_request_wait_all ( (fh->f_procs_per_group + 1 )*fh->f_num_aggrs,
+        ret = ompi_request_wait_all ( ((size_t)fh->f_procs_per_group + 1 )*fh->f_num_aggrs,
                                       reqs, MPI_STATUS_IGNORE);
         if (OMPI_SUCCESS != ret){
             goto exit;
@@ -533,7 +536,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
 
         if(NOT_AGGR_INDEX != aggr_index) {
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-            start_write_time = MPI_Wtime();
+            start_write_time = ompi_wtime();
 #endif
             ret = write_init (fh, fh->f_aggr_list[aggr_index], aggr_data[aggr_index],
                               write_synch_type, &req_iwrite, use_accelerator_buffer);
@@ -541,7 +544,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
                 goto exit;
             }
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-            end_write_time = MPI_Wtime();
+            end_write_time = ompi_wtime();
             write_time += end_write_time - start_write_time;
 #endif
         }
@@ -555,7 +558,7 @@ int mca_fcoll_vulcan_file_write_all (struct ompio_file_t *fh,
     }
         
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
-    end_exch = MPI_Wtime();
+    end_exch = ompi_wtime();
     exch_write += end_exch - start_exch;
     nentry.time[0] = write_time;
     nentry.time[1] = comm_time;
@@ -833,8 +836,8 @@ static int shuffle_init (int index, int num_cycles, int aggregator, int rank,
                 reqs[i] = MPI_REQUEST_NULL;
                 if (0 < data->disp_index[i]) {
                     ompi_datatype_create_hindexed(data->disp_index[i],
-                                                  data->blocklen_per_process[i],
-                                                  data->displs_per_process[i],
+                                                  OMPI_COUNT_ARRAY_CREATE(data->blocklen_per_process[i]),
+                                                  OMPI_DISP_ARRAY_CREATE(data->displs_per_process[i]),
                                                   MPI_BYTE,
                                                   &data->recvtype[i]);
                     ompi_datatype_commit(&data->recvtype[i]);
@@ -909,8 +912,8 @@ static int shuffle_init (int index, int num_cycles, int aggregator, int rank,
 
         if ( 0 <= block_index ) {
             ompi_datatype_create_hindexed(block_index+1,
-                                          blocklength_proc,
-                                          displs_proc,
+                                          OMPI_COUNT_ARRAY_CREATE(blocklength_proc),
+                                          OMPI_DISP_ARRAY_CREATE(displs_proc),
                                           MPI_BYTE,
                                           &newType);
             ompi_datatype_commit(&newType);

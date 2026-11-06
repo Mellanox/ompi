@@ -6,11 +6,13 @@
  * Copyright (c) 2015      Los Alamos National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2017      Intel, Inc. All rights reserved
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 /**
@@ -64,6 +66,7 @@ typedef struct mca_mtl_request_t mca_mtl_request_t;
 #define MCA_MTL_BASE_FLAG_REQUIRE_WORLD 0x00000001
 #define MCA_MTL_BASE_FLAG_ACCELERATOR_INIT_DISABLE 0x00000002
 #define MCA_MTL_BASE_FLAG_SUPPORTS_EXT_CID 0x00000004
+#define MCA_MTL_BASE_FLAG_REQUIRE_SYNC_INIT 0x00000008
 
 /**
  * Initialization routine for MTL component

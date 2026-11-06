@@ -12,17 +12,22 @@
  * Copyright (c) 2014-2020 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
  * Copyright (c) 2024      NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2025      Triad National Security, LLC. All rights
+ *                         reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #ifndef MCA_COLL_BASE_UTIL_EXPORT_H
 #define MCA_COLL_BASE_UTIL_EXPORT_H
 
 #include "ompi_config.h"
+
+#include "opal/sys/atomic.h"
 
 #include "mpi.h"
 #include "ompi/mca/mca.h"
@@ -54,6 +59,15 @@ struct ompi_coll_base_nbc_request_t {
     } cb;
     void *req_complete_cb_data;
     struct {
+        /* The refcounted modes are mutually exclusive (each retain
+         * helper uses exactly one of them), so they share a union.
+         * release_arrays is NOT part of that union: temporary arrays
+         * (e.g. the Fortran bindings' converted count/displacement and
+         * datatype arrays for the *w collectives) are appended to the
+         * same request whose refcounted.vecs entries were populated by
+         * ompi_coll_base_retain_datatypes_w().  When the two aliased,
+         * releasing the vecs NULLed the leading release_arrays slots
+         * and every appended array leaked. */
         union {
             struct {
                 ompi_op_t *op;
@@ -73,7 +87,12 @@ struct ompi_coll_base_nbc_request_t {
                 int rcount;
             } vecs;
         } refcounted;
-        void* release_arrays[OMPI_REQ_NB_RELEASE_ARRAYS];
+        /* Slots are claimed by ompi_coll_base_append_array_to_release()
+         * and drained (with an atomic swap, so a completion callback
+         * racing with the post-append drain in
+         * ompi_coll_base_add_release_arrays_cb() cannot double-free)
+         * by release_objs_callback(). */
+        opal_atomic_intptr_t release_arrays[OMPI_REQ_NB_RELEASE_ARRAYS];
     } data;
 };
 
@@ -93,6 +112,42 @@ ompi_coll_base_nbc_reserve_tags(ompi_communicator_t* comm, int32_t reserve)
         goto reread_tag;
     }
     return tag;
+}
+
+/**
+ * Append an array to a request object to be freed upon completion
+ * of the associated operation.
+ * The request object must be of type ompi_coll_base_nbc_request_t.
+ */
+__opal_attribute_always_inline__ static inline int
+ompi_coll_base_append_array_to_release(struct ompi_request_t *req, void *array_ptr)
+{
+    int i, ret = OMPI_SUCCESS;
+    struct ompi_coll_base_nbc_request_t *request = (struct ompi_coll_base_nbc_request_t *)req;
+
+    /*
+     * important sanity check - doing steps below on a non-libnbc request can lead
+     * to difficult to debug memory corruption problems
+     */
+    assert(request->super.req_type == OMPI_REQUEST_COLL);
+
+    for(i = 0; i < OMPI_REQ_NB_RELEASE_ARRAYS; i++ ) {
+        if (0 == request->data.release_arrays[i]) {
+            break;
+        }
+    }
+
+    if (OMPI_REQ_NB_RELEASE_ARRAYS > i) {
+        request->data.release_arrays[i] = (intptr_t) array_ptr;
+        ++i;
+        if (OMPI_REQ_NB_RELEASE_ARRAYS > i) {
+            request->data.release_arrays[i] = 0;
+        }
+    } else {
+        ret = OMPI_ERR_OUT_OF_RESOURCE;
+    }
+
+    return ret;
 }
 
 typedef struct ompi_coll_base_nbc_request_t ompi_coll_base_nbc_request_t;
@@ -187,6 +242,13 @@ int ompi_coll_base_retain_datatypes_w( ompi_request_t *request,
                                        ompi_datatype_t * const stypes[],
                                        ompi_datatype_t * const rtypes[],
                                        bool use_topo);
+
+/**
+ * If necessary, set callback to free extra memory regions
+ * set in release_arrays.  Not set if a callback is already
+ * associated with the request.
+ */
+int ompi_coll_base_add_release_arrays_cb(ompi_request_t *request);
 
 /* File reading function */
 int ompi_coll_base_file_getnext_long(FILE *fptr, int *fileline, long* val);

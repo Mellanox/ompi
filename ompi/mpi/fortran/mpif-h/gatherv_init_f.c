@@ -12,21 +12,26 @@
  * Copyright (c) 2011-2012 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2015-2021 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
+ * Copyright (c) 2025      Triad National Security, LLC. All rights
+ *                         reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
 
 #include "ompi/mpi/fortran/mpif-h/bindings.h"
 #include "ompi/mpi/fortran/base/constants.h"
+#include "ompi/communicator/communicator.h"
 #include "ompi/mca/coll/base/coll_base_util.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_GATHERV_INIT = ompi_gatherv_init_f
 #pragma weak pmpi_gatherv_init = ompi_gatherv_init_f
 #pragma weak pmpi_gatherv_init_ = ompi_gatherv_init_f
@@ -39,13 +44,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_GATHERV_INIT,
                             pmpi_gatherv_init,
                             pmpi_gatherv_init_,
                             pmpi_gatherv_init__,
-                            pompi_gatherv_init_f,
+                            ompi_gatherv_init_f,
                             (char *sendbuf, MPI_Fint *sendcount, MPI_Fint *sendtype, char *recvbuf, MPI_Fint *recvcounts, MPI_Fint *displs, MPI_Fint *recvtype, MPI_Fint *root, MPI_Fint *comm, MPI_Fint *info, MPI_Fint *request, MPI_Fint *ierr),
                             (sendbuf, sendcount, sendtype, recvbuf, recvcounts, displs, recvtype, root, comm, info, request, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_GATHERV_INIT = ompi_gatherv_init_f
 #pragma weak mpi_gatherv_init = ompi_gatherv_init_f
 #pragma weak mpi_gatherv_init_ = ompi_gatherv_init_f
@@ -54,17 +59,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_GATHERV_INIT,
 #pragma weak MPI_Gatherv_init_f = ompi_gatherv_init_f
 #pragma weak MPI_Gatherv_init_f08 = ompi_gatherv_init_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_GATHERV_INIT,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_GATHERV_INIT,
                             mpi_gatherv_init,
                             mpi_gatherv_init_,
                             mpi_gatherv_init__,
                             ompi_gatherv_init_f,
                             (char *sendbuf, MPI_Fint *sendcount, MPI_Fint *sendtype, char *recvbuf, MPI_Fint *recvcounts, MPI_Fint *displs, MPI_Fint *recvtype, MPI_Fint *root, MPI_Fint *comm, MPI_Fint *info, MPI_Fint *request,MPI_Fint *ierr),
                             (sendbuf, sendcount, sendtype, recvbuf, recvcounts, displs, recvtype, root, comm, info, request, ierr) )
-#else
-#define ompi_gatherv_init_f pompi_gatherv_init_f
-#endif
 #endif
 
 
@@ -77,7 +78,7 @@ void ompi_gatherv_init_f(char *sendbuf, MPI_Fint *sendcount, MPI_Fint *sendtype,
     MPI_Datatype c_sendtype, c_recvtype;
     MPI_Info c_info;
     MPI_Request c_request;
-    int size, idx = 0, c_ierr;
+    int size, c_ierr;
     OMPI_ARRAY_NAME_DECL(recvcounts);
     OMPI_ARRAY_NAME_DECL(displs);
 
@@ -86,7 +87,15 @@ void ompi_gatherv_init_f(char *sendbuf, MPI_Fint *sendcount, MPI_Fint *sendtype,
     c_recvtype = PMPI_Type_f2c(*recvtype);
     c_info = PMPI_Info_f2c(*info);
 
-    PMPI_Comm_size(c_comm, &size);
+    /* recvcounts and displs are only significant at the root, and on an
+     * intercommunicator they describe the remote group.  Everywhere else
+     * there is nothing to convert: a zero length leaves an empty array
+     * that the C call never looks at. */
+    if (OMPI_COMM_IS_INTER(c_comm)) {
+        size = (MPI_ROOT == OMPI_FINT_2_INT(*root)) ? ompi_comm_remote_size(c_comm) : 0;
+    } else {
+        size = (ompi_comm_rank(c_comm) == OMPI_FINT_2_INT(*root)) ? ompi_comm_size(c_comm) : 0;
+    }
     OMPI_ARRAY_FINT_2_INT(recvcounts, size);
     OMPI_ARRAY_FINT_2_INT(displs, size);
 
@@ -104,12 +113,11 @@ void ompi_gatherv_init_f(char *sendbuf, MPI_Fint *sendcount, MPI_Fint *sendtype,
     if (NULL != ierr) *ierr = OMPI_INT_2_FINT(c_ierr);
     if (MPI_SUCCESS == c_ierr) {
         *request = PMPI_Request_c2f(c_request);
-        ompi_coll_base_nbc_request_t* nb_request = (ompi_coll_base_nbc_request_t*)c_request;
-        if (recvcounts != OMPI_ARRAY_NAME_CONVERT(recvcounts)) {
-            nb_request->data.release_arrays[idx++] = OMPI_ARRAY_NAME_CONVERT(recvcounts);
-            nb_request->data.release_arrays[idx++] = OMPI_ARRAY_NAME_CONVERT(displs);
+        if ((void *)recvcounts != (void *)OMPI_ARRAY_NAME_CONVERT(recvcounts)) {
+            ompi_coll_base_append_array_to_release(c_request, OMPI_ARRAY_NAME_CONVERT(recvcounts));
+            ompi_coll_base_append_array_to_release(c_request, OMPI_ARRAY_NAME_CONVERT(displs));
+            ompi_coll_base_add_release_arrays_cb(c_request);
         }
-        nb_request->data.release_arrays[idx]   = NULL;
      } else {
         OMPI_ARRAY_FINT_2_INT_CLEANUP(recvcounts);
         OMPI_ARRAY_FINT_2_INT_CLEANUP(displs);

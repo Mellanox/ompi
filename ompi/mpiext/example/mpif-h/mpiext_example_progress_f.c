@@ -6,6 +6,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 /*
@@ -23,7 +24,7 @@
 
 #include "ompi/mpiext/example/c/mpiext_example_c.h"
 
-/* Rather than doing a whole pile of messy things with weak symbols,
+/* Rather than doing a whole pile of messy things with weak aliases,
    just define one back-end function (the _f version), and then four
    short functions for the four popular Fortran symbol-mangling
    schemes that call the back-end function.  Make sure that the the

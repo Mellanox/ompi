@@ -6,6 +6,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "oshmem_config.h"
@@ -31,7 +32,7 @@
  * globals
  */
 
-void *mca_sshmem_base_start_address = (void *)UINTPTR_MAX;
+void *mca_sshmem_base_start_address = NULL;
 
 char * mca_sshmem_base_backing_file_dir = NULL;
 

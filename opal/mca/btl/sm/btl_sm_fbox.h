@@ -5,11 +5,13 @@
  * Copyright (c) 2018      Triad National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2020-2025 Google, LLC. All rights reserveed.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #ifndef MCA_BTL_SM_FBOX_H
@@ -71,12 +73,17 @@ static inline void mca_btl_sm_endpoint_setup_fbox_send(struct mca_btl_base_endpo
     endpoint->fbox_out.metadata = (mca_btl_sm_fbox_metadata_t *) base;
     endpoint->fbox_out.metadata->start = 0;
 
-    endpoint->fbox_out.buffer = (unsigned char *)(endpoint->fbox_out.metadata + 1);
+    unsigned char *buffer = (unsigned char *)(endpoint->fbox_out.metadata + 1);
 
     /* zero out the first header in the fast box */
-    ((mca_btl_sm_fbox_hdr_t *)endpoint->fbox_out.buffer)->ival = 0;
+    ((mca_btl_sm_fbox_hdr_t *) buffer)->ival = 0;
 
+    /* Senders test fbox_out.buffer without a lock to learn whether the
+     * box is usable, so it is the last thing to be set: a thread that
+     * sees it must also see everything above, and must not find a header
+     * of its own overwritten by the zeroing. */
     opal_atomic_wmb();
+    endpoint->fbox_out.buffer = buffer;
 }
 
 #define MCA_BTL_SM_FBOX_HDR(x) ((mca_btl_sm_fbox_hdr_t *) (x))
@@ -121,7 +128,15 @@ static inline unsigned int mca_btl_sm_fbox_align(unsigned int size) {
     return (size + MCA_BTL_SM_FBOX_ALIGNMENT_MASK) & ~MCA_BTL_SM_FBOX_ALIGNMENT_MASK;
 }
 
-static inline unsigned char *mca_btl_sm_fbox_reserve_locked(mca_btl_base_endpoint_t *ep, unsigned int data_size) {
+/* Reserve room for one entry. The receiver consumes entries in buffer
+ * order and insists that their sequence numbers follow the same order,
+ * so the sequence number is drawn here, under the same lock as the slot.
+ * Drawing it after the lock is dropped lets two threads sending to the
+ * same peer duplicate or swap their numbers, which leaves the receiver
+ * waiting forever on a slot whose number never comes. */
+static inline unsigned char *mca_btl_sm_fbox_reserve_locked(mca_btl_base_endpoint_t *ep,
+                                                            unsigned int data_size,
+                                                            uint16_t *seq) {
     const unsigned int fbox_size = mca_btl_sm_component.fbox_size;
     const unsigned int fbox_offset_mask = fbox_size - 1;
     unsigned int buffer_free;
@@ -197,6 +212,7 @@ static inline unsigned char *mca_btl_sm_fbox_reserve_locked(mca_btl_base_endpoin
                  "peer's buffer. free = %u",
                  (unsigned int) aligned_entry_size, ep->fbox_out.start, ep->fbox_out.end, buffer_free));
 
+    *seq = ep->fbox_out.seq++;
     ep->fbox_out.end += aligned_entry_size;
     
     /* zero-out the next */
@@ -214,9 +230,10 @@ static inline bool mca_btl_sm_fbox_sendi(mca_btl_base_endpoint_t *ep, unsigned c
                                          void *restrict payload, const size_t payload_size)
 {
     size_t data_size = header_size + payload_size;
+    uint16_t seq;
 
     OPAL_THREAD_LOCK(&ep->lock);
-    unsigned char *dst = mca_btl_sm_fbox_reserve_locked(ep, (unsigned int) data_size);
+    unsigned char *dst = mca_btl_sm_fbox_reserve_locked(ep, (unsigned int) data_size, &seq);
     OPAL_THREAD_UNLOCK(&ep->lock);
     if (OPAL_UNLIKELY(NULL == dst)) {
         return false;
@@ -232,8 +249,7 @@ static inline bool mca_btl_sm_fbox_sendi(mca_btl_base_endpoint_t *ep, unsigned c
 
     opal_atomic_wmb();
     /* write out part of the header now. the tag will be written when the data is available */
-    mca_btl_sm_fbox_set_header(MCA_BTL_SM_FBOX_HDR(dst), tag, ep->fbox_out.seq++,
-                               (uint32_t) data_size);
+    mca_btl_sm_fbox_set_header(MCA_BTL_SM_FBOX_HDR(dst), tag, seq, (uint32_t) data_size);
 
     return true;
 }
@@ -320,6 +336,26 @@ static inline int mca_btl_sm_check_fboxes(void)
     return total_processed;
 }
 
+/* Stop polling a peer's fast box. The poll list is walked by index and
+ * its order means nothing, so close the hole with the last entry rather
+ * than shifting the tail down. */
+static inline void mca_btl_sm_fbox_in_unregister(mca_btl_base_endpoint_t *ep)
+{
+    mca_btl_sm_component_t *component = &mca_btl_sm_component;
+
+    for (unsigned int i = 0; i < component->num_fbox_in_endpoints; ++i) {
+        if (ep != component->fbox_in_endpoints[i]) {
+            continue;
+        }
+
+        component->num_fbox_in_endpoints--;
+        component->fbox_in_endpoints[i]
+            = component->fbox_in_endpoints[component->num_fbox_in_endpoints];
+        component->fbox_in_endpoints[component->num_fbox_in_endpoints] = NULL;
+        return;
+    }
+}
+
 static inline void mca_btl_sm_try_fbox_setup(mca_btl_base_endpoint_t *ep, mca_btl_sm_hdr_t *hdr)
 {
     if (OPAL_UNLIKELY(NULL == ep->fbox_out.buffer
@@ -344,6 +380,15 @@ static inline void mca_btl_sm_try_fbox_setup(mca_btl_base_endpoint_t *ep, mca_bt
             }
 
             opal_atomic_wmb();
+        }
+
+        if (NULL == ep->fbox_out.buffer) {
+            /* The test above is an equality, so this peer has just spent
+             * its one chance at a fast box on a moment when none could be
+             * had.  Wind the count back rather than leave a busy peer on
+             * the fifo forever; the next threshold sends ask again, and
+             * the send path pays nothing extra in the meantime. */
+            ep->send_count = 0;
         }
 
         OPAL_THREAD_UNLOCK(&mca_btl_sm_component.lock);

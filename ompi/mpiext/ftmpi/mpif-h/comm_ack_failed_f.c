@@ -2,11 +2,13 @@
  * Copyright (c) 2022      The University of Tennessee and the University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 #include "ompi_config.h"
 
@@ -15,7 +17,7 @@
 #include "ompi/mpiext/ftmpi/c/mpiext_ftmpi_c.h"
 #include "ompi/mpiext/ftmpi/mpif-h/prototypes_mpi.h"
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPIX_COMM_ACK_FAILED = ompix_comm_ack_failed_f
 #pragma weak pmpix_comm_ack_failed = ompix_comm_ack_failed_f
 #pragma weak pmpix_comm_ack_failed_ = ompix_comm_ack_failed_f
@@ -30,7 +32,7 @@
 #pragma weak MPIX_Comm_ack_failed_f = ompix_comm_ack_failed_f
 #pragma weak MPIX_Comm_ack_failed_f08 = ompix_comm_ack_failed_f
 
-#else /* No weak symbols */
+#else /* No weak aliases */
 OMPI_GENERATE_F77_BINDINGS(PMPIX_COMM_ACK_FAILED,
                         pmpix_comm_ack_failed,
                         pmpix_comm_ack_failed_,
@@ -51,6 +53,14 @@ OMPI_GENERATE_F77_BINDINGS(MPIX_COMM_ACK_FAILED,
 void ompix_comm_ack_failed_f(MPI_Fint *comm, MPI_Fint *num_to_ack, MPI_Fint *num_acked, MPI_Fint *ierr)
 {
     MPI_Comm c_comm = PMPI_Comm_f2c(*comm);
+    int c_ierr;
+    OMPI_SINGLE_NAME_DECL(num_acked);
 
-    *ierr = OMPI_INT_2_FINT(PMPIX_Comm_ack_failed(c_comm, OMPI_FINT_2_INT(*num_to_ack), OMPI_PFINT_2_PINT(num_acked)));
+    c_ierr = PMPIX_Comm_ack_failed(c_comm, OMPI_FINT_2_INT(*num_to_ack),
+                                   OMPI_SINGLE_NAME_CONVERT(num_acked));
+    *ierr = OMPI_INT_2_FINT(c_ierr);
+
+    if (MPI_SUCCESS == c_ierr) {
+        OMPI_SINGLE_INT_2_FINT(num_acked);
+    }
 }

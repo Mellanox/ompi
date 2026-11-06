@@ -7,17 +7,21 @@
  *                         reserved.
  *
  * Copyright (c) 2023      Jeffrey M. Squyres.  All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 #include "opal/mca/base/mca_base_var.h"
 #include "opal/mca/timer/base/base.h"
 #include "opal/mca/threads/threads.h"
 
 #include "ompi/runtime/params.h"
+#include "ompi/runtime/mpiruntime.h"
+#include "ompi/runtime/ompi_modex.h"
 #include "ompi/communicator/communicator.h"
 #include "ompi/mca/pml/pml.h"
 #include "ompi/mca/bml/bml.h"
@@ -260,8 +264,14 @@ int ompi_comm_start_detector(ompi_communicator_t* comm) {
     if( &ompi_mpi_comm_world.comm != comm ) return OMPI_ERR_NOT_IMPLEMENTED;
     comm_detector_t* detector = &comm_world_detector;
 
-    int rank, np;
-    startdate = PMPI_Wtime();
+    int rank, np, ret;
+
+    /* The ring moves to any rank from the event callback, which cannot
+     * wait: every peer's connection info has to be local already, so
+     * that building its endpoint needs no communication. */
+    ret = ompi_modex_wait_if_needed();
+    if( OMPI_SUCCESS != ret ) return ret;
+    startdate = ompi_wtime();
     detector->comm = comm;
     np = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
@@ -274,7 +284,7 @@ int ompi_comm_start_detector(ompi_communicator_t* comm) {
     }
     detector->hb_lastpeek = startdate;
     detector->hb_sstamp = 0.;
-    detector->hb_rstamp = PMPI_Wtime()+comm_heartbeat_timeout+1.+log((double)np); /* give some slack for MPI_Init */
+    detector->hb_rstamp = ompi_wtime()+comm_heartbeat_timeout+1.+log((double)np); /* give some slack for MPI_Init */
 
     detector->hb_rdma_bml_btl_observer = NULL;
     detector->hb_rdma_bml_btl_observing = NULL;
@@ -328,6 +338,7 @@ static int fd_heartbeat_request(comm_detector_t* detector) {
     int ret = OMPI_SUCCESS;
     int np = ompi_comm_size(comm);
     int rank;
+    int passed_over = 0;
     size_t regsize = 0;
 
     for( rank = (np+detector->hb_observing) % np;
@@ -339,6 +350,16 @@ static int fd_heartbeat_request(comm_detector_t* detector) {
 
         /* if everybody else is dead, I don't need to monitor myself. */
         if( rank == comm->c_my_rank ) {
+            if( 0 != passed_over ) {
+                /* Not "everybody else is dead": a live peer was passed
+                 * over for want of a path to it. The verdict below would
+                 * stop this detector for good, so retry on the next tick,
+                 * which walks again because hb_rdma_flag is untouched. */
+                opal_output_verbose(1, ompi_ftmpi_output_handle,
+                                    "%s %s: No rdma path to any of the %d live processes on communicator %s:%d, will try again",
+                                    OMPI_NAME_PRINT(OMPI_PROC_MY_NAME), __func__, passed_over, ompi_comm_print_cid(comm), comm->c_epoch);
+                return OMPI_ERR_UNREACH;
+            }
             OPAL_OUTPUT_VERBOSE((2, ompi_ftmpi_output_handle,
                              "%s %s: Every other node is dead on communicator %s:%d",
                              OMPI_NAME_PRINT(OMPI_PROC_MY_NAME), __func__, ompi_comm_print_cid(comm), comm->c_epoch));
@@ -361,10 +382,25 @@ static int fd_heartbeat_request(comm_detector_t* detector) {
                              OMPI_NAME_PRINT(OMPI_PROC_MY_NAME), __func__, rank, ompi_comm_print_cid(comm), comm->c_epoch, detector->hb_rstamp-startdate ));
 
         if( comm_detector_use_rdma_hb ) {
-            mca_bml_base_endpoint_t* endpoint = mca_bml_base_get_endpoint(proc);
-            assert( NULL != endpoint );
+            int eprc;
+            mca_bml_base_endpoint_t* endpoint = mca_bml_base_get_endpoint(proc, &eprc);
+            if( NULL == endpoint ) {
+                /* No btl in common with that peer -- its connection info
+                 * was waited for at startup -- so observe somebody else. */
+                OPAL_OUTPUT_VERBOSE((2, ompi_ftmpi_output_handle,
+                                     "%s %s: No endpoint to observe %d on communicator %s:%d (%d), trying the next rank",
+                                     OMPI_NAME_PRINT(OMPI_PROC_MY_NAME), __func__, rank, ompi_comm_print_cid(comm), comm->c_epoch, eprc));
+                passed_over++;
+                continue;
+            }
             mca_bml_base_btl_t *bml_btl = mca_bml_base_btl_array_get_index(&endpoint->btl_rdma, 0);
-            assert( NULL != bml_btl );
+            if( NULL == bml_btl ) {
+                OPAL_OUTPUT_VERBOSE((2, ompi_ftmpi_output_handle,
+                                     "%s %s: No rdma btl to observe %d on communicator %s:%d, trying the next rank",
+                                     OMPI_NAME_PRINT(OMPI_PROC_MY_NAME), __func__, rank, ompi_comm_print_cid(comm), comm->c_epoch));
+                passed_over++;
+                continue;
+            }
 
             /* register mem for the flag and cache the reg key */
             /* remove previous registration if any */
@@ -396,7 +432,7 @@ static int fd_heartbeat_request(comm_detector_t* detector) {
         free(msg);
         break;
     }
-    detector->hb_rstamp = PMPI_Wtime()+detector->hb_timeout; /* we add one timeout slack to account for the send time */
+    detector->hb_rstamp = ompi_wtime()+detector->hb_timeout; /* we add one timeout slack to account for the send time */
     return ret;
 }
 
@@ -417,17 +453,33 @@ static int fd_heartbeat_request_cb(ompi_communicator_t* comm, ompi_comm_heartbea
     OPAL_OUTPUT_VERBOSE((2, ompi_ftmpi_output_handle,
                          "%s %s: Recveived heartbeat request from %d on communicator %s:%d",
                          OMPI_NAME_PRINT(OMPI_PROC_MY_NAME), __func__, msg->from, ompi_comm_print_cid(comm), comm->c_epoch));
+    mca_bml_base_btl_t *bml_btl = NULL;
+
+    if( comm_detector_use_rdma_hb ) {
+        /* Do not accept an observer we cannot put into: this protocol
+         * reads silence as death, so claiming a coverage we do not
+         * provide is how a live rank gets declared dead; declining leaves
+         * the observer to look elsewhere. Nothing to wait for either --
+         * this runs from a btl callback, and the ring is formed only once
+         * every peer's connection info is local. */
+        ompi_proc_t* proc = ompi_comm_peer_lookup(detector->comm, msg->from);
+        assert( NULL != proc );
+        int eprc;
+        mca_bml_base_endpoint_t* endpoint = mca_bml_base_get_endpoint(proc, &eprc);
+        bml_btl = (NULL != endpoint)?
+            mca_bml_base_btl_array_get_index(&endpoint->btl_rdma, 0): NULL;
+        if( NULL == bml_btl ) {
+            opal_output_verbose(1, ompi_ftmpi_output_handle,
+                                "%s %s: No rdma endpoint to heartbeat observer %d on communicator %s:%d (%d), declining to be observed by it",
+                                OMPI_NAME_PRINT(OMPI_PROC_MY_NAME), __func__, msg->from, ompi_comm_print_cid(comm), comm->c_epoch, eprc);
+            return false; /* never forward on the rbcast */
+        }
+    }
+
     detector->hb_observer = msg->from;
     detector->hb_sstamp = 0.;
 
     if( comm_detector_use_rdma_hb ) {
-        ompi_proc_t* proc = ompi_comm_peer_lookup(detector->comm, msg->from);
-        assert( NULL != proc );
-        mca_bml_base_endpoint_t* endpoint = mca_bml_base_get_endpoint(proc);
-        assert( NULL != endpoint );
-        mca_bml_base_btl_t *bml_btl = mca_bml_base_btl_array_get_index(&endpoint->btl_rdma, 0);
-        assert( NULL != bml_btl );
-
         OPAL_THREAD_LOCK(&detector->fd_mutex);
         /* registration for the local rank */
         /* remove previous registration, if any */
@@ -463,7 +515,7 @@ static int fd_heartbeat_request_cb(ompi_communicator_t* comm, ompi_comm_heartbea
 static void fd_event_cb(int fd, short flags, void* pdetector)
 {
     comm_detector_t* detector = pdetector;
-    double stamp = PMPI_Wtime();
+    double stamp = ompi_wtime();
     double lastpeek = detector->hb_lastpeek;
     detector->hb_lastpeek = stamp;
 
@@ -661,7 +713,7 @@ static int fd_heartbeat_send(comm_detector_t* detector) {
     if( OPAL_PROC_ON_LOCAL_NODE(ompi_comm_peer_lookup(comm, detector->hb_observer)->super.proc_flags) ) return OMPI_SUCCESS;
 #endif
 
-    double now = PMPI_Wtime();
+    double now = ompi_wtime();
     if( 0. != detector->hb_sstamp
      && (now - detector->hb_sstamp) >= 2.*detector->hb_period ) {
         opal_output_verbose(1, ompi_ftmpi_output_handle, "%s %s: MISSED my SEND %d deadline by %.1e, this could trigger a false suspicion for me.",
@@ -708,7 +760,7 @@ static int fd_heartbeat_recv_cb(ompi_communicator_t* comm, ompi_comm_heartbeat_m
                              OMPI_NAME_PRINT(OMPI_PROC_MY_NAME), __func__, msg->from, ompi_comm_print_cid(comm), comm->c_epoch, detector->hb_observing ));
     }
     else {
-        double stamp = PMPI_Wtime();
+        double stamp = ompi_wtime();
         double grace = detector->hb_timeout - (stamp - detector->hb_rstamp);
         OPAL_OUTPUT_VERBOSE((9, ompi_ftmpi_output_handle,
                              "%s %s: Received heartbeat from %d on communicator %s:%d at timestamp %g (remained %.1e of %.1e before suspecting)",

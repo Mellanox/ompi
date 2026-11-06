@@ -14,6 +14,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -25,6 +26,7 @@
 static void mca_pml_cm_request_construct( mca_pml_cm_request_t* req) {
     OBJ_CONSTRUCT(&req->req_convertor, opal_convertor_t);
     req->req_ompi.req_type = OMPI_REQUEST_PML;
+    req->req_staged = false;
 }
 
 static void mca_pml_cm_request_destruct( mca_pml_cm_request_t* req) {

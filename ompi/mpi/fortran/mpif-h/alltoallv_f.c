@@ -12,20 +12,23 @@
  * Copyright (c) 2011-2012 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
 
 #include "ompi/mpi/fortran/mpif-h/bindings.h"
 #include "ompi/mpi/fortran/base/constants.h"
+#include "ompi/communicator/communicator.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_ALLTOALLV = ompi_alltoallv_f
 #pragma weak pmpi_alltoallv = ompi_alltoallv_f
 #pragma weak pmpi_alltoallv_ = ompi_alltoallv_f
@@ -38,13 +41,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_ALLTOALLV,
                            pmpi_alltoallv,
                            pmpi_alltoallv_,
                            pmpi_alltoallv__,
-                           pompi_alltoallv_f,
+                           ompi_alltoallv_f,
                            (char *sendbuf, MPI_Fint *sendcounts, MPI_Fint *sdispls, MPI_Fint *sendtype, char *recvbuf, MPI_Fint *recvcounts, MPI_Fint *rdispls, MPI_Fint *recvtype, MPI_Fint *comm, MPI_Fint *ierr),
                            (sendbuf, sendcounts, sdispls, sendtype, recvbuf, recvcounts, rdispls, recvtype, comm, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_ALLTOALLV = ompi_alltoallv_f
 #pragma weak mpi_alltoallv = ompi_alltoallv_f
 #pragma weak mpi_alltoallv_ = ompi_alltoallv_f
@@ -53,17 +56,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_ALLTOALLV,
 #pragma weak MPI_Alltoallv_f = ompi_alltoallv_f
 #pragma weak MPI_Alltoallv_f08 = ompi_alltoallv_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_ALLTOALLV,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_ALLTOALLV,
                            mpi_alltoallv,
                            mpi_alltoallv_,
                            mpi_alltoallv__,
                            ompi_alltoallv_f,
                            (char *sendbuf, MPI_Fint *sendcounts, MPI_Fint *sdispls, MPI_Fint *sendtype, char *recvbuf, MPI_Fint *recvcounts, MPI_Fint *rdispls, MPI_Fint *recvtype, MPI_Fint *comm, MPI_Fint *ierr),
                            (sendbuf, sendcounts, sdispls, sendtype, recvbuf, recvcounts, rdispls, recvtype, comm, ierr) )
-#else
-#define ompi_alltoallv_f pompi_alltoallv_f
-#endif
 #endif
 
 
@@ -84,7 +83,8 @@ void ompi_alltoallv_f(char *sendbuf, MPI_Fint *sendcounts, MPI_Fint *sdispls,
     c_sendtype = PMPI_Type_f2c(*sendtype);
     c_recvtype = PMPI_Type_f2c(*recvtype);
 
-    PMPI_Comm_size(c_comm, &size);
+    /* On an intercommunicator the counts describe the remote group. */
+    size = OMPI_COMM_IS_INTER(c_comm) ? ompi_comm_remote_size(c_comm) : ompi_comm_size(c_comm);
     OMPI_ARRAY_FINT_2_INT(sendcounts, size);
     OMPI_ARRAY_FINT_2_INT(sdispls, size);
     OMPI_ARRAY_FINT_2_INT(recvcounts, size);

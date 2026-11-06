@@ -16,6 +16,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -483,6 +484,13 @@ ompi_coll_base_topo_build_kmtree(struct ompi_communicator_t* comm,
                  "coll:base:topo:build_kmtree root %d, radix %d", root, radix));
     int comm_size = ompi_comm_size(comm);
     int rank = ompi_comm_rank(comm);
+
+    /* Every loop below advances by multiplying with the radix, so anything
+     * below 2 does not build a degenerate tree -- it never terminates. */
+    if( radix < 2 ) {
+        OPAL_OUTPUT((ompi_coll_base_framework.framework_output,"coll:base:topo:build_kmtree WARNING invalid radix %d smaller than min 2, forcing to min!", radix));
+        radix = 2;
+    }
 
     /* nchilds <= (radix - 1) * \ceil(\log_{radix}(comm_size)) */
     int log_radix = 0;

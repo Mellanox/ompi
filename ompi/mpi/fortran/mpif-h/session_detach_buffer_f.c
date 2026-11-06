@@ -20,6 +20,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -27,7 +28,7 @@
 #include "ompi/mpi/fortran/mpif-h/bindings.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_SESSION_DETACH_BUFFER = ompi_session_detach_buffer_f
 #pragma weak pmpi_session_detach_buffer = ompi_session_detach_buffer_f
 #pragma weak pmpi_session_detach_buffer_ = ompi_session_detach_buffer_f
@@ -39,13 +40,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_SESSION_DETACH_BUFFER,
                            pmpi_session_detach_buffer,
                            pmpi_session_detach_buffer_,
                            pmpi_session_detach_buffer__,
-                           pompi_session_detach_buffer_f,
+                           ompi_session_detach_buffer_f,
                            (MPI_Fint *session, char *buffer, MPI_Fint *size, MPI_Fint *ierr),
                            (session, buffer, size, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_SESSION_DETACH_BUFFER = ompi_session_detach_buffer_f
 #pragma weak mpi_session_detach_buffer = ompi_session_detach_buffer_f
 #pragma weak mpi_session_detach_buffer_ = ompi_session_detach_buffer_f
@@ -53,17 +54,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_SESSION_DETACH_BUFFER,
 
 #pragma weak MPI_Session_detach_buffer_ = ompi_session_detach_buffer_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_SESSION_DETACH_BUFFER,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_SESSION_DETACH_BUFFER,
                            mpi_session_detach_buffer,
                            mpi_session_detach_buffer_,
                            mpi_session_detach_buffer__,
                            ompi_session_detach_buffer_f,
                            (MPI_Fint *session, char *buffer, MPI_Fint *size, MPI_Fint *ierr),
                            (session, buffer, size, ierr) )
-#else
-#define ompi_session_detach_buffer_f pompi_session_detach_buffer_f
-#endif
 #endif
 
 
@@ -76,7 +73,7 @@ OMPI_GENERATE_F77_BINDINGS (MPI_SESSION_DETACH_BUFFER,
  * The mpi_f08 implementation for MPI_BUFFER_DETACH therefore is a
  * separate routine in the use-mpi-f08 directory (it's not built in
  * the mpif-h directory because of all the different combinations of
- * supporting weak symbols (or not), building the profiling layer (or
+ * supporting weak aliases (or not), building the profiling layer (or
  * not), etc.).
  */
 void ompi_session_detach_buffer_f(MPI_Fint *session, char *buffer, MPI_Fint *size, MPI_Fint *ierr)

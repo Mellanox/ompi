@@ -12,6 +12,7 @@
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 AC_DEFUN([OSHMEM_CONFIG_FILES],[
@@ -19,6 +20,7 @@ AC_DEFUN([OSHMEM_CONFIG_FILES],[
     oshmem/Makefile
     oshmem/include/Makefile
     oshmem/shmem/c/Makefile
+    oshmem/test/memheap/Makefile
 
     oshmem/shmem/fortran/Makefile
 

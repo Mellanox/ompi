@@ -14,7 +14,7 @@
  * Copyright (c) 2006-2008 University of Houston.  All rights reserved.
  * Copyright (c) 2010      Oracle and/or its affiliates.  All rights reserved.
  * Copyright (c) 2012-2015 Sandia National Laboratories.  All rights reserved.
- * Copyright (c) 2015      NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2015-2026 NVIDIA Corporation.  All rights reserved.
  * Copyright (c) 2015-2017 Intel, Inc. All rights reserved.
  * Copyright (c) 2016-2017 IBM Corporation. All rights reserved.
  * Copyright (c) 2018      Cisco Systems, Inc.  All rights reserved
@@ -31,6 +31,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -531,7 +532,9 @@ static int allocate_state_single (ompi_osc_rdma_module_t *module, void **base, s
     module->my_peer = my_peer;
     module->free_after = module->rank_array;
     my_peer->flags |= OMPI_OSC_RDMA_PEER_LOCAL_BASE;
-    my_peer->flags |= OMPI_OSC_RDMA_PEER_CPU_ATOMICS;
+    if (use_cpu_atomics) {
+        my_peer->flags |= OMPI_OSC_RDMA_PEER_CPU_ATOMICS;
+    }
     my_peer->state = (uint64_t) (uintptr_t) module->state;
 
     if (use_cpu_atomics) {
@@ -548,6 +551,8 @@ static int allocate_state_single (ompi_osc_rdma_module_t *module, void **base, s
         ompi_osc_rdma_peer_extended_t *ex_peer = (ompi_osc_rdma_peer_extended_t *) my_peer;
 
         ex_peer->super.base = (intptr_t) *base;
+        ex_peer->super.local_base = (intptr_t) *base;
+        my_peer->flags |= OMPI_OSC_RDMA_PEER_SHARED_MEM;
 
         if (!module->same_size) {
             ex_peer->size = size;
@@ -609,18 +614,16 @@ static int allocate_state_shared (ompi_osc_rdma_module_t *module, void **base, s
 
     if (module->single_node) {
         use_cpu_atomics = true;
-    } else if (module->use_accelerated_btl) {
-        use_cpu_atomics = !!(module->accelerated_btl->btl_flags & MCA_BTL_ATOMIC_SUPPORTS_GLOB);
     } else {
-        /* using the shared state optimization that is enabled by
-         * being able to use cpu atomics was never enabled for
-         * alternate btls, due to a previous bug in the enablement
-         * logic when alternate btls were first supported.  It is
-         * likely that this optimization could work with sufficient
-         * testing, but for now, always disable to not introduce new
-         * correctness risks.
-         */
-        use_cpu_atomics = false;
+        /* the shared state optimization requires that atomics issued through
+         * the btl be atomic with respect to atomics issued by the cpu, since
+         * a peer on this node will update the state directly while a peer on
+         * another node reaches it through the btl.  module->atomic_flags
+         * reports that guarantee for both the accelerated and the alternate
+         * btl case: for alternate btls the atomics are emulated as active
+         * messages that the target's cpu applies with opal_atomic_*(), so
+         * they are cpu atomics on the same memory by construction. */
+        use_cpu_atomics = !!(module->atomic_flags & MCA_BTL_ATOMIC_SUPPORTS_GLOB);
     }
 
     if (1 == local_size) {
@@ -855,23 +858,30 @@ static int allocate_state_shared (ompi_osc_rdma_module_t *module, void **base, s
                 ex_peer->size = temp[i].size;
             }
 
-            if (MPI_WIN_FLAVOR_ALLOCATE == module->flavor || peer_rank == my_rank) {
-                /* base is local and cpu atomics are available */
-                if (MPI_WIN_FLAVOR_ALLOCATE == module->flavor) {
-                    ex_peer->super.base = (uintptr_t) module->segment_base + offset;
-                } else {
-                    ex_peer->super.base = (uintptr_t) *base;
-                }
-
-                peer->flags |= OMPI_OSC_RDMA_PEER_LOCAL_BASE;
-                if (use_cpu_atomics) {
-                    peer->flags |= OMPI_OSC_RDMA_PEER_CPU_ATOMICS;
-                } else if (module->use_memory_registration) {
-                    ex_peer->super.base_handle = (mca_btl_base_registration_handle_t *) peer_region->btl_handle_data;
-                }
+            /* the memory of a peer on this node lives in the shared segment, so
+             * we can always compute an address for it that is valid in this
+             * process, whether or not we can use cpu atomics on that peer */
+            if (MPI_WIN_FLAVOR_ALLOCATE == module->flavor) {
+                ex_peer->super.local_base = (osc_rdma_base_t) ((uintptr_t) module->segment_base + offset);
+                peer->flags |= OMPI_OSC_RDMA_PEER_SHARED_MEM;
                 offset += temp[i].size;
                 offset += OPAL_ALIGN_PAD_AMOUNT(offset, memory_alignment);
+            } else if (peer_rank == my_rank) {
+                ex_peer->super.local_base = (osc_rdma_base_t) (uintptr_t) *base;
+                peer->flags |= OMPI_OSC_RDMA_PEER_SHARED_MEM;
+            }
+
+            if (use_cpu_atomics && (MPI_WIN_FLAVOR_ALLOCATE == module->flavor || peer_rank == my_rank)) {
+                /* base is local and cpu atomics are available */
+                ex_peer->super.base = ex_peer->super.local_base;
+
+                peer->flags |= OMPI_OSC_RDMA_PEER_LOCAL_BASE;
+                peer->flags |= OMPI_OSC_RDMA_PEER_CPU_ATOMICS;
             } else {
+                /* the peer will be reached through the btl, so base and
+                 * base_handle have to describe the same mapping.  even for a
+                 * peer on this node we must use the address the registration
+                 * was made with rather than our own mapping of the segment. */
                 ex_peer->super.base = peer_region->base;
 
                 if (module->use_memory_registration) {
@@ -887,31 +897,43 @@ static int allocate_state_shared (ompi_osc_rdma_module_t *module, void **base, s
 }
 
 /**
- * @brief ensure that all local procs are added to the bml
+ * @brief whether this peer's connection info may still arrive
  *
- * The sm btl requires that all local procs be added to work correctly. If pml/ob1
- * was not selected then we can't rely on this property. Since osc/rdma may use
- * btl/sm we need to ensure that btl/sm is set up correctly. This function will
- * only (potentially) call add_procs on local procs.
+ * Only NOT_READY is "not yet"; unreachable is an answer.
  */
-static void ompi_osc_rdma_ensure_local_add_procs (void)
+static bool ompi_osc_rdma_endpoint_pending (ompi_proc_t *proc)
 {
-    size_t nprocs;
-    ompi_proc_t** procs = ompi_proc_get_allocated (&nprocs);
-    if (NULL == procs) {
-        /* weird, this should have caused MPI_Init to fail */
-        return;
+    int rc;
+
+    return (NULL == mca_bml_base_get_endpoint (proc, &rc)) && (OMPI_ERR_NOT_READY == rc);
+}
+
+/**
+ * @brief resolve every peer of the window's communicator
+ *
+ * Every rank must pick the same accelerated BTL: the choice sizes the
+ * window state, so ranks that disagree address each other's state at
+ * different offsets, undetected. Reachability is symmetric but for a
+ * peer whose info has not landed here -- that alone would drop a BTL
+ * the peer keeps, and blocking is legal in a window constructor.
+ *
+ * Two sweeps because asking starts the fetch: the first puts them all
+ * in flight, so the wait is the slowest peer, not their sum. It ends
+ * because a fetch that completes without data says so, not "not yet".
+ */
+static void ompi_osc_rdma_ensure_endpoints (ompi_communicator_t *comm)
+{
+    int comm_size = ompi_comm_size (comm);
+
+    for (int rank = 0 ; rank < comm_size ; ++rank) {
+        (void) ompi_osc_rdma_endpoint_pending (ompi_comm_peer_lookup (comm, rank));
     }
 
-    for (size_t proc_index = 0 ; proc_index < nprocs ; ++proc_index) {
-        ompi_proc_t *proc = procs[proc_index];
-        if (OPAL_PROC_ON_LOCAL_NODE(proc->super.proc_flags)) {
-            /* this will cause add_proc to get called if it has not already been called */
-            (void) mca_bml_base_get_endpoint (proc);
+    for (int rank = 0 ; rank < comm_size ; ++rank) {
+        while (ompi_osc_rdma_endpoint_pending (ompi_comm_peer_lookup (comm, rank))) {
+            opal_progress ();
         }
     }
-
-    free(procs);
 }
 
 
@@ -1075,9 +1097,10 @@ static bool ompi_osc_rdma_check_accelerated_btl(struct mca_btl_base_module_t *bt
 static int ompi_osc_rdma_query_accelerated_btls (ompi_communicator_t *comm, ompi_osc_rdma_module_t *module)
 {
     int comm_size = ompi_comm_size (comm);
-    struct mca_btl_base_module_t *selected_btl;
+    struct mca_btl_base_module_t *selected_btl = NULL;
     mca_bml_base_endpoint_t *base_endpoint;
     char **btls_to_use;
+    int rc;
 
     assert(NULL != module);
 
@@ -1114,8 +1137,8 @@ static int ompi_osc_rdma_query_accelerated_btls (ompi_communicator_t *comm, ompi
         }
     }
 
-    /* if osc/rdma gets selected we need to ensure that all local procs have been added */
-    ompi_osc_rdma_ensure_local_add_procs ();
+    /* The BTL choice below needs every peer resolved. */
+    ompi_osc_rdma_ensure_endpoints (comm);
 
     /*
      * A BTL in the list of known can reach all peers that met our
@@ -1135,12 +1158,13 @@ static int ompi_osc_rdma_query_accelerated_btls (ompi_communicator_t *comm, ompi
      * be used to communicate with rank 0 necessarily is not in the
      * list of all available BTLs for this algorithm.
      */
-    base_endpoint = mca_bml_base_get_endpoint(ompi_comm_peer_lookup(comm, 0));
+    base_endpoint = mca_bml_base_get_endpoint(ompi_comm_peer_lookup(comm, 0), &rc);
     if (NULL == base_endpoint) {
+        opal_output_verbose(MCA_BASE_VERBOSE_INFO, ompi_osc_base_framework.framework_output,
+                            "accelerated_query: no endpoint for rank 0 (%d)", rc);
         return OMPI_ERR_UNREACH;
     }
 
-    selected_btl = NULL;
     for (size_t i_btl = 0 ;
          i_btl < mca_bml_base_btl_array_get_size(&base_endpoint->btl_rdma);
          ++i_btl) {
@@ -1164,8 +1188,14 @@ static int ompi_osc_rdma_query_accelerated_btls (ompi_communicator_t *comm, ompi
             ompi_proc_t *proc = ompi_comm_peer_lookup(comm, rank);
             mca_bml_base_endpoint_t *endpoint;
 
-            endpoint = mca_bml_base_get_endpoint(proc);
+            endpoint = mca_bml_base_get_endpoint(proc, &rc);
             if (NULL == endpoint) {
+                /* Final after the wait above: no BTL reaches this peer,
+                 * which every rank sees, so all drop this btl. */
+                opal_output_verbose(MCA_BASE_VERBOSE_INFO, ompi_osc_base_framework.framework_output,
+                                    "accelerated_query: no endpoint for rank %d (%d), dropping btl %s",
+                                    rank, rc,
+                                    examine_btl->btl_component->btl_version.mca_component_name);
                 have_connectivity = false;
                 break;
             }
@@ -1594,17 +1624,30 @@ static int ompi_osc_rdma_component_select (struct ompi_win_t *win, void **base, 
     if (OMPI_SUCCESS != ret) {
         opal_output_verbose(MCA_BASE_VERBOSE_ERROR, ompi_osc_base_framework.framework_output,
                             "failed to share window data with peers");
-        ompi_osc_rdma_free (win);
     } else {
         /* for now the leader is always rank 0 in the communicator */
         module->leader = ompi_osc_rdma_module_peer (module, 0);
-
-        opal_output_verbose(MCA_BASE_VERBOSE_INFO, ompi_osc_base_framework.framework_output,
-                            "finished creating osc/rdma window with id %s",
-                            ompi_comm_print_cid(module->comm));
+        if (OPAL_UNLIKELY(NULL == module->leader)) {
+            opal_output_verbose(MCA_BASE_VERBOSE_ERROR, ompi_osc_base_framework.framework_output,
+                                "could not reach the window leader");
+            ret = OMPI_ERR_UNREACH;
+        }
     }
 
-    return ret;
+    /* Local failures of a collective: rank 0 can never fail the leader
+     * lookup, so without agreement one rank errors out of the
+     * constructor while the rest hold a live window and later deadlock. */
+    ret = synchronize_errorcode (ret, module->comm);
+    if (OPAL_UNLIKELY(OMPI_SUCCESS != ret)) {
+        ompi_osc_rdma_free (win);
+        return ret;
+    }
+
+    opal_output_verbose(MCA_BASE_VERBOSE_INFO, ompi_osc_base_framework.framework_output,
+                        "finished creating osc/rdma window with id %s",
+                        ompi_comm_print_cid(module->comm));
+
+    return OMPI_SUCCESS;
 }
 
 
@@ -1649,21 +1692,11 @@ int ompi_osc_rdma_shared_query(
     ptrdiff_t *disp_unit, void *baseptr)
 {
     int rc = OMPI_ERR_NOT_SUPPORTED;
-    ompi_osc_rdma_peer_t *peer;
-    int actual_rank = rank;
+    ompi_osc_rdma_peer_t *peer = NULL;
     ompi_osc_rdma_module_t *module = GET_MODULE(win);
-
-    peer = ompi_osc_module_get_peer (module, actual_rank);
-    if (NULL == peer) {
-        return OMPI_ERR_NOT_SUPPORTED;
-    }
 
     /* currently only supported for allocated windows */
     if (MPI_WIN_FLAVOR_ALLOCATE != module->flavor) {
-        return OMPI_ERR_NOT_SUPPORTED;
-    }
-
-    if (!ompi_osc_rdma_peer_local_base(peer)) {
         return OMPI_ERR_NOT_SUPPORTED;
     }
 
@@ -1671,28 +1704,43 @@ int ompi_osc_rdma_shared_query(
         /* iterate until we find a rank that has a non-zero size */
         for (int i = 0 ; i < ompi_comm_size(module->comm) ; ++i) {
             peer = ompi_osc_module_get_peer (module, i);
-            ompi_osc_rdma_peer_extended_t *ex_peer = (ompi_osc_rdma_peer_extended_t *) peer;
-            if (!ompi_osc_rdma_peer_local_base(peer)) {
+            if (NULL == peer) {
+                /* peer object not cached yet (typically non-local here since local peers are added eagerly) */
                 continue;
-            } else if (module->same_size && ex_peer->super.base) {
-                break;
-            } else if (ex_peer->size > 0) {
-                break;
             }
+            ompi_osc_rdma_peer_extended_t *ex_peer = (ompi_osc_rdma_peer_extended_t *) peer;
+            if (ompi_osc_rdma_peer_shared_mem(peer)) {
+                if (module->same_size && ex_peer->super.local_base) {
+                    break;
+                } else if (ex_peer->size > 0) {
+                    break;
+                }
+            }
+            // reset so we don't mistakenly use a peer without memory
+            peer = NULL;
         }
+    } else {
+        peer = ompi_osc_module_get_peer (module, rank);
     }
 
+    if (NULL == peer || !ompi_osc_rdma_peer_shared_mem(peer)) {
+        return OMPI_ERR_NOT_SUPPORTED;
+    }
+
+    /* report local_base rather than base: base is the address the peer is
+     * reached at through the btl, which is only also a valid address in this
+     * process when cpu atomics are in use */
     if (module->same_size && module->same_disp_unit) {
         *size = module->size;
         *disp_unit = module->disp_unit;
         ompi_osc_rdma_peer_basic_t *ex_peer = (ompi_osc_rdma_peer_basic_t *) peer;
-        *((void**) baseptr) = (void *) (intptr_t)ex_peer->base;
+        *((void**) baseptr) = (void *) (intptr_t)ex_peer->local_base;
         rc = OMPI_SUCCESS;
     } else {
         ompi_osc_rdma_peer_extended_t *ex_peer = (ompi_osc_rdma_peer_extended_t *) peer;
-        if (ex_peer->super.base != 0) {
+        if (ex_peer->super.local_base != 0) {
             /* we know the base of the peer */
-            *((void**) baseptr) = (void *) (intptr_t)ex_peer->super.base;
+            *((void**) baseptr) = (void *) (intptr_t)ex_peer->super.local_base;
             *size = ex_peer->size;
             *disp_unit = ex_peer->disp_unit;
             rc = OMPI_SUCCESS;

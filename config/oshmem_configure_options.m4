@@ -13,6 +13,7 @@ dnl
 dnl Additional copyrights may follow
 dnl
 dnl $HEADER$
+dnl SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 dnl
 
 AC_DEFUN([OSHMEM_CONFIGURE_OPTIONS],[
@@ -117,7 +118,7 @@ AS_IF([test "$enable_oshmem" = "no" && \
        AC_MSG_ERROR([Cannot continue])])
 
 # Cannot check if we can enable profiling because it is not yet
-# known whether the compiler supports weak symbols.
+# known whether the compiler supports weak aliases.
 
 
 #

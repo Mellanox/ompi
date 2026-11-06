@@ -14,7 +14,13 @@
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
+
+#
+# we only support OSHMEM when the OMPI ABI MPI library is built
+#
+if OMPI_BUILD_OMPI_ABI
 
 # Do we have the Fortran bindings?
 if OSHMEM_BUILD_FORTRAN_BINDINGS
@@ -34,6 +40,7 @@ SUBDIRS += \
 	$(MCA_oshmem_FRAMEWORKS_SUBDIRS) \
 	$(MCA_oshmem_FRAMEWORK_COMPONENT_STATIC_SUBDIRS) \
 	. \
+	test/memheap \
 	$(MCA_oshmem_FRAMEWORK_COMPONENT_DSO_SUBDIRS)
 endif
 
@@ -42,7 +49,8 @@ DIST_SUBDIRS = \
 	shmem/c \
 	shmem/fortran \
 	$(MCA_oshmem_FRAMEWORKS_SUBDIRS) \
-	$(MCA_oshmem_FRAMEWORK_COMPONENT_ALL_SUBDIRS)
+	$(MCA_oshmem_FRAMEWORK_COMPONENT_ALL_SUBDIRS) \
+	test/memheap
 
 # Build The main OSHMEM library, but only if we're building OSHMEM
 lib_LTLIBRARIES =
@@ -84,3 +92,5 @@ include shmem/Makefile.am
 include mca/Makefile.am
 include tools/Makefile.am
 include util/Makefile.am
+endif
+

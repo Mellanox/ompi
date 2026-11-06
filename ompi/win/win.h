@@ -15,13 +15,14 @@
  * Copyright (c) 2013-2015 Los Alamos National Security, LLC.  All rights
  *                         reserved.
  * Copyright (c) 2016-2017 IBM Corporation. All rights reserved.
- * Copyright (c) 2018-2025 Triad National Security, LLC. All rights
+ * Copyright (c) 2018-2026 Triad National Security, LLC. All rights
  *                         reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #ifndef OMPI_WIN_H
@@ -81,8 +82,12 @@ struct ompi_win_t {
 
     opal_mutex_t  w_lock;
 
-    char w_name[MPI_MAX_OBJECT_NAME];
-  
+    /* Dynamically allocated to the MPI Forum ABI maximum
+     * (OMPI_MPI_MAX_OBJECT_NAME_ABI, from configure) so the standard-ABI entry
+     * points can store full-length names.  The traditional OMPI entry points
+     * still limit themselves to OPAL_MAX_OBJECT_NAME (== MPI_MAX_OBJECT_NAME). */
+    char *w_name;
+
     /* Group associated with this window. */
     ompi_group_t *w_group;
 

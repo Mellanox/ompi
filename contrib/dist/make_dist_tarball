@@ -12,22 +12,19 @@
 #                         All rights reserved.
 # Copyright (c) 2008-2023 Cisco Systems, Inc.  All rights reserved
 # Copyright (c) 2016      Intel, Inc. All rights reserved
+# Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 #
-# Version of auto tools that we want
+# The versions of the GNU tools that we want are read from the VERSION
+# file (the *_dist_version fields), below.
 #
-
-M4_TARGET_VERSION=1.4.19
-AM_TARGET_VERSION=1.16.5
-AC_TARGET_VERSION=2.71
-LT_TARGET_VERSION=2.4.6
-FLEX_TARGET_VERSION=2.6.4
 
 #
 # When running "make distcheck", use these parallelization flags.  Can
@@ -56,6 +53,7 @@ gnu_version_ignore=0
 dist_target=distcheck
 distcheck_flags="AM_MAKEFLAGS=$DISTCHECK_MAKE_FLAGS"
 git_update=1
+tarball_version_override=
 
 if test "`basename $0`" = "make_tarball"; then
     dist_target=dist
@@ -78,6 +76,7 @@ while test "$1" != ""; do
         --dirtyok) dirty_ok=1 ;;
         --verok) gnu_version_ignore=1;;
         --no-git-update) git_update=0;;
+        --tarball-version) tarball_version_override=$2; shift ;;
         *)
             cat <<EOF
 Unrecognized argument: $1
@@ -92,6 +91,12 @@ Valid arguments:
   --dirtyok       Ok if the source tree is dirty
   --verok         Ignore result of autotools version checking
   --no-git-update Skip "git pull" part, assume local repo is updated already
+  --tarball-version STRING
+                  Set tarball_version in VERSION to STRING instead of
+                  emptying it.  This makes the resulting tarball be named
+                  openmpi-STRING.tar.* (rather than deriving the name from
+                  major/minor/release/greek).  Used by the nightly build to
+                  produce names like openmpi-main-<timestamp>-<githash>.
 EOF
             exit 1
             ;;
@@ -172,8 +177,8 @@ Autoconf: $AC_TARGET_VERSION
 Libtool:  $LT_TARGET_VERSION
 Flex:     $FLEX_TARGET_VERSION
 
-Either change this script to match the found version, or install
-the correct version of the tools.
+Either change the *_dist_version values in VERSION to match the found
+version, or install the correct version of the tools.
 ----------------------------------------------------------------------
 EOF
         if test "$gnu_version_ignore" = "0"; then
@@ -195,8 +200,8 @@ Autoconf: $AC_TARGET_VERSION
 Libtool:  $LT_TARGET_VERSION
 Flex:     $FLEX_TARGET_VERSION
 
-Either change this script to match the found version, or install
-the correct version of the tools.
+Either change the *_dist_version values in VERSION to match the found
+version, or install the correct version of the tools.
 ----------------------------------------------------------------------
 EOF
         if test "$gnu_version_ignore" = "0"; then
@@ -237,8 +242,8 @@ Autoconf: $AC_TARGET_VERSION
 Libtool:  $LT_TARGET_VERSION
 Flex:     $FLEX_TARGET_VERSION
 
-Either change this script to match the found version, or install
-the correct version of the tools.
+Either change the *_dist_version values in VERSION to match the found
+version, or install the correct version of the tools.
 ----------------------------------------------------------------------
 EOF
         if test "$gnu_version_ignore" = "0"; then
@@ -319,15 +324,6 @@ make_tarball() {
 start=`date`
 echo "*** Start time: $start"
 
-echo "*** Checking tools versions..."
-check_gnu_version m4 $M4_TARGET_VERSION
-check_gnu_version automake $AM_TARGET_VERSION
-check_gnu_version autoconf $AC_TARGET_VERSION
-check_gnu_version libtool $LT_TARGET_VERSION
-# Windows needs a recent version of flex; old versions don't generate
-# Windows-friendly *_lex.c files.
-check_gnu_version flex $FLEX_TARGET_VERSION
-
 #
 # Verify that we're in a top Open MPI dir
 #
@@ -379,6 +375,36 @@ echo "*** Removing old VERSION file..."
 rm -f VERSION
 echo "*** Restoring pristine VERSION file..."
 git checkout VERSION
+
+#
+# Read the versions of the GNU tools that we want from VERSION.  Do
+# this only now, after any "git pull" and after restoring the pristine
+# VERSION, so that we check against what will actually be packaged.
+#
+get_dist_version() {
+    ver=`sed -n "s/^$1_dist_version=//p" VERSION`
+    if test -z "$ver"; then
+        echo "Could not find $1_dist_version in VERSION.  Abort!" >&2
+        exit 1
+    fi
+    echo $ver
+}
+
+M4_TARGET_VERSION=`get_dist_version m4` || exit 1
+AM_TARGET_VERSION=`get_dist_version automake` || exit 1
+AC_TARGET_VERSION=`get_dist_version autoconf` || exit 1
+LT_TARGET_VERSION=`get_dist_version libtool` || exit 1
+FLEX_TARGET_VERSION=`get_dist_version flex` || exit 1
+
+echo "*** Checking tools versions..."
+check_gnu_version m4 $M4_TARGET_VERSION
+check_gnu_version automake $AM_TARGET_VERSION
+check_gnu_version autoconf $AC_TARGET_VERSION
+check_gnu_version libtool $LT_TARGET_VERSION
+# Windows needs a recent version of flex; old versions don't generate
+# Windows-friendly *_lex.c files.
+check_gnu_version flex $FLEX_TARGET_VERSION
+
 echo "*** Getting git version..."
 repo_rev=`git describe --tags --always`
 echo "    Repo rev number: $repo_rev"
@@ -399,11 +425,21 @@ echo "*** Removing version numbers from VERSION..."
 version_files=VERSION
 release_date=`date '+%b %d, %Y'`
 echo "    Release date: $release_date"
+
+# Normally we empty tarball_version so that the tarball name is derived
+# from major/minor/release (+ greek).  If the caller passed
+# --tarball-version, substitute that exact string instead, so the
+# tarball is named openmpi-<tarball_version>.tar.* (used by the nightly
+# build to produce names like openmpi-main-<timestamp>-<githash>).
+if test -n "$tarball_version_override"; then
+    echo "    Overriding tarball_version with: $tarball_version_override"
+fi
+
 for file in $version_files; do
     echo " - $file"
     sed -e 's/^repo_rev=.*/'repo_rev=$repo_rev/ \
         -e "s/^date=.*/date=\"$release_date\"/" \
-        -e "s/^tarball_version=.*/tarball_version=/" \
+        -e "s/^tarball_version=.*/tarball_version=$tarball_version_override/" \
         $file > $file.new
     cp -f $file.new $file
     rm $file.new

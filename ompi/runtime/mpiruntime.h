@@ -22,6 +22,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 /**
@@ -59,7 +60,21 @@ OMPI_DECLSPEC extern volatile bool ompi_rte_initialized;
 
 /** Do we have multiple threads? */
 OMPI_DECLSPEC extern bool ompi_mpi_thread_multiple;
-/** Thread level requested to \c MPI_Init_thread() */
+
+/* Number of active MPI_T init references (defined in
+   ompi/runtime/ompi_mpi_init.c).  Read by the instance and world-model
+   initialization paths to judge quiescence before writing the
+   process-wide thread flags; all transitions happen with the instance
+   lock held (MPI_T_init_thread()/MPI_T_finalize() take it), so a reader
+   holding that lock sees a stable value. */
+OMPI_DECLSPEC extern volatile uint32_t ompi_mpit_init_count;
+
+/* Thread level of the current MPI_T epoch (defined in
+   ompi/runtime/ompi_mpi_init.c); MPI_THREAD_SINGLE when no epoch is
+   active.  Same locking discipline as ompi_mpit_init_count. */
+OMPI_DECLSPEC extern int ompi_mpit_thread_level;
+/** Thread level requested to \c MPI_Init_thread(); \c MPI_UNDEFINED
+    until one is requested */
 OMPI_DECLSPEC extern int ompi_mpi_thread_requested;
 /** Thread level provided by Open MPI */
 OMPI_DECLSPEC extern int ompi_mpi_thread_provided;
@@ -164,6 +179,17 @@ extern opal_hash_table_t ompi_mpi_f90_complex_hashtable;
 
 /** version string of ompi */
 OMPI_DECLSPEC extern const char ompi_version_string[];
+
+/**
+ * Internal, profiling-neutral equivalent of MPI_Wtime().
+ *
+ * Returns a number of seconds since some time in the past, using the
+ * same time origin (ompi_wtime_time_origin) as the MPI_Wtime() binding.
+ * Back-end OMPI code must call this instead of the public
+ * MPI_Wtime()/PMPI_Wtime() so that libopen_mpi does not acquire a link
+ * dependency on the MPI bindings library (libmpi).
+ */
+OMPI_DECLSPEC double ompi_wtime(void);
 
 /**
  * Obtain the required thread level from environment (if any)

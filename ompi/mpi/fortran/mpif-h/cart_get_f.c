@@ -12,11 +12,13 @@
  * Copyright (c) 2011-2012 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -24,7 +26,7 @@
 #include "ompi/mpi/fortran/mpif-h/bindings.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_CART_GET = ompi_cart_get_f
 #pragma weak pmpi_cart_get = ompi_cart_get_f
 #pragma weak pmpi_cart_get_ = ompi_cart_get_f
@@ -37,13 +39,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_CART_GET,
                            pmpi_cart_get,
                            pmpi_cart_get_,
                            pmpi_cart_get__,
-                           pompi_cart_get_f,
+                           ompi_cart_get_f,
                            (MPI_Fint *comm, MPI_Fint *maxdims, MPI_Fint *dims, ompi_fortran_logical_t *periods, MPI_Fint *coords, MPI_Fint *ierr),
                            (comm, maxdims, dims, periods, coords, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_CART_GET = ompi_cart_get_f
 #pragma weak mpi_cart_get = ompi_cart_get_f
 #pragma weak mpi_cart_get_ = ompi_cart_get_f
@@ -52,17 +54,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_CART_GET,
 #pragma weak MPI_Cart_get_f = ompi_cart_get_f
 #pragma weak MPI_Cart_get_f08 = ompi_cart_get_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_CART_GET,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_CART_GET,
                            mpi_cart_get,
                            mpi_cart_get_,
                            mpi_cart_get__,
                            ompi_cart_get_f,
                            (MPI_Fint *comm, MPI_Fint *maxdims, MPI_Fint *dims, ompi_fortran_logical_t *periods, MPI_Fint *coords, MPI_Fint *ierr),
                            (comm, maxdims, dims, periods, coords, ierr) )
-#else
-#define ompi_cart_get_f pompi_cart_get_f
-#endif
 #endif
 
 
@@ -89,7 +87,13 @@ void ompi_cart_get_f(MPI_Fint *comm, MPI_Fint *maxdims, MPI_Fint *dims,
                           OMPI_ARRAY_NAME_CONVERT(coords));
     if (NULL != ierr) *ierr = OMPI_INT_2_FINT(c_ierr);
 
-    OMPI_ARRAY_INT_2_FINT(dims, size);
-    OMPI_ARRAY_INT_2_LOGICAL(periods, size);
-    OMPI_ARRAY_INT_2_FINT(coords, size);
+    if (MPI_SUCCESS == c_ierr) {
+        OMPI_ARRAY_INT_2_FINT(dims, size);
+        OMPI_ARRAY_INT_2_LOGICAL(periods, size);
+        OMPI_ARRAY_INT_2_FINT(coords, size);
+    } else {
+        OMPI_ARRAY_FINT_2_INT_CLEANUP(dims);
+        OMPI_ARRAY_FINT_2_INT_CLEANUP(coords);
+        OMPI_ARRAY_LOGICAL_2_INT_CLEANUP(periods);
+    }
 }

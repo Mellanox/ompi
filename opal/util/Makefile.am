@@ -10,22 +10,24 @@
 # Copyright (c) 2004-2005 The Regents of the University of California.
 #                         All rights reserved.
 # Copyright (c) 2007-2022 Cisco Systems, Inc.  All rights reserved
-# Copyright (c) 2013      NVIDIA Corporation.  All rights reserved.
+# Copyright (c) 2013-2026 NVIDIA Corporation.  All rights reserved.
 # Copyright (c) 2013      Intel, Inc. All rights reserved
 # Copyright (c) 2016      Los Alamos National Security, LLC. All rights
 #                         reserved.
 # Copyright (c) 2016      Research Organization for Information Science
 #                         and Technology (RIST). All rights reserved.
 # Copyright (c) 2016-2017 IBM Corporation. All rights reserved.
-# Copyright (c) 2020-2024 Amazon.com, Inc. or its affiliates.
+# Copyright (c) 2020-2026 Amazon.com, Inc. or its affiliates.
 #                         All Rights reserved.
 # Copyright (c) 2021      Google, LLC. All rights reserved.
 # Copyright (c) 2025      Jeffrey M. Squyres.  All rights reserved.
+# Copyright (c) 2026      Stony Brook University.  All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 include $(top_srcdir)/Makefile.ompi-rules
@@ -55,7 +57,7 @@ headers = \
         bit_ops.h \
         clock_gettime.h \
         cmd_line.h \
-        crc.h \
+        count_disp_array.h \
 	ethtool.h \
         error.h \
 	event.h \
@@ -75,7 +77,6 @@ headers = \
         path.h \
         printf.h \
         proc.h \
-        qsort.h \
         show_help.h \
         stacktrace.h \
         string_copy.h \
@@ -103,7 +104,6 @@ libopalutil_core_la_SOURCES = \
         basename.c \
 	bipartite_graph.c \
         cmd_line.c \
-        crc.c \
         error.c \
         fd.c \
         few.c \
@@ -118,7 +118,6 @@ libopalutil_core_la_SOURCES = \
         path.c \
         printf.c \
         proc.c \
-        qsort.c \
         sha256.c \
         show_help.c \
         show_help_content.c \
@@ -127,7 +126,20 @@ libopalutil_core_la_SOURCES = \
         sys_limits.c \
         uri.c
 
-show_help_content.c: convert-help-files-to-c-code.py
+# The generator slurps every help-*.txt in the tree, so the prerequisite
+# list would be the tree; run it unconditionally instead. It rewrites
+# the output only when the content differs, so an unchanged tree leaves
+# the timestamp alone and nothing recompiles. A tarball ships the
+# generated file, so only a developer tree needs to rebuild it; leaving
+# it alone also keeps it out of a VPATH build directory, which matters
+# because distclean would not remove it there.
+if OPAL_DEVEL_BUILD
+show_help_content_deps = FORCE
+else
+show_help_content_deps = convert-help-files-to-c-code.py
+endif
+
+show_help_content.c: $(show_help_content_deps)
 	$(OMPI_V_GEN) subdirs=""; \
 	for dir in $(MCA_PROJECT_SUBDIRS); do \
 	    subdirs="$(abs_top_srcdir)/$$dir $$subdirs"; \
@@ -135,6 +147,8 @@ show_help_content.c: convert-help-files-to-c-code.py
 	$(PYTHON) $(abs_srcdir)/convert-help-files-to-c-code.py \
 	    --roots $$subdirs \
 	    --out show_help_content.c
+
+FORCE:
 
 if OPAL_COMPILE_TIMING
 libopalutil_core_la_SOURCES += timings.c
@@ -154,5 +168,7 @@ opaldir = $(opalincludedir)/$(subdir)
 opal_HEADERS = $(headers)
 endif
 
-maintainer-clean-local:
-	rm -f show_help_content.c
+MAINTAINERCLEANFILES = show_help_content.c
+if OPAL_DEVEL_BUILD
+CLEANFILES += show_help_content.c
+endif

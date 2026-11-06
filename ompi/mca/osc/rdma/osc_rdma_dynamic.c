@@ -4,11 +4,13 @@
  *                         reserved.
  * Copyright (c) 2020-2021 Google, LLC. All rights reserved.
  * Copyright (c) 2020      Intel, Inc.  All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "osc_rdma_comm.h"
@@ -179,6 +181,11 @@ int ompi_osc_rdma_attach (struct ompi_win_t *win, void *base, size_t len)
         return OMPI_ERR_RMA_FLAVOR;
     }
 
+    if (OPAL_UNLIKELY(NULL == my_peer)) {
+        OSC_RDMA_VERBOSE(MCA_BASE_VERBOSE_ERROR, "no peer object for self");
+        return OMPI_ERR_UNREACH;
+    }
+
     if (0 == len) {
         /* shot-circuit 0-byte case */
         return OMPI_SUCCESS;
@@ -309,6 +316,11 @@ int ompi_osc_rdma_detach (struct ompi_win_t *win, const void *base)
 
     if (module->flavor != MPI_WIN_FLAVOR_DYNAMIC) {
         return OMPI_ERR_WIN;
+    }
+
+    if (OPAL_UNLIKELY(NULL == my_peer)) {
+        OSC_RDMA_VERBOSE(MCA_BASE_VERBOSE_ERROR, "no peer object for self");
+        return OMPI_ERR_UNREACH;
     }
 
     OPAL_THREAD_LOCK(&module->lock);

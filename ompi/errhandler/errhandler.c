@@ -17,13 +17,15 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2015-2019 Intel, Inc.  All rights reserved.
  * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
- * Copyright (c) 2018-2021 Triad National Security, LLC. All rights
+ * Copyright (c) 2018-2026 Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -202,16 +204,11 @@ int ompi_errhandler_init(void)
   ompi_mpi_errors_abort.eh.eh_comm_fn = ompi_mpi_errors_abort_comm_handler;
   ompi_mpi_errors_abort.eh.eh_file_fn = ompi_mpi_errors_abort_file_handler;
   ompi_mpi_errors_abort.eh.eh_win_fn  = ompi_mpi_errors_abort_win_handler ;
+  ompi_mpi_errors_abort.eh.eh_instance_fn = ompi_mpi_errors_abort_instance_handler;
   ompi_mpi_errors_abort.eh.eh_fort_fn = NULL;
   opal_string_copy(ompi_mpi_errors_abort.eh.eh_name,
                    "MPI_ERRORS_ABORT",
                    sizeof(ompi_mpi_errors_abort.eh.eh_name));
-
-  /* Lets initialize the initial error handler if not already done */
-  char *env = getenv("OMPI_MCA_mpi_initial_errhandler");
-  if( NULL != env ) {
-    ompi_process_info.initial_errhandler = strndup(env, MPI_MAX_INFO_VAL);
-  }
 
   ompi_initial_errhandler_init();
   ompi_mpi_instance_append_finalize (ompi_errhandler_finalize);
@@ -255,7 +252,8 @@ void ompi_errhandler_free (ompi_errhandler_t *errhandler)
 
 ompi_errhandler_t *ompi_errhandler_create(ompi_errhandler_type_t object_type,
                                           ompi_errhandler_generic_handler_fn_t *func,
-                                          ompi_errhandler_lang_t lang)
+                                          ompi_errhandler_lang_t lang,
+                                          ompi_errhandler_converter_fn_t *converter)
 {
     ompi_errhandler_t *new_errhandler;
     int ret;
@@ -298,6 +296,7 @@ ompi_errhandler_t *ompi_errhandler_create(ompi_errhandler_type_t object_type,
             default:
                 break;
             }
+            new_errhandler->eh_converter_fn = converter;
         }
 
         if (NULL != new_errhandler) {
@@ -550,6 +549,19 @@ void ompi_errhandler_callback(size_t refid, pmix_status_t status,
 {
     int rc;
     size_t i;
+
+    /* The report crosses from the PMIx thread to the MPI progress engine,
+     * and by the time it arrives that engine may be gone: this handler is
+     * deregistered during instance finalize, but a notification already in
+     * the local event chain still lands here, and the sync event base is
+     * freed later still.  opal_event_set() would then assign no base and
+     * opal_event_active() would drop the event with nothing but a libevent
+     * warning, leaking it.  Decline it instead, so the default action
+     * stands and the report is not lost in silence. */
+    if (NULL == opal_sync_event_base) {
+        goto error;
+    }
+
     /* an error has been found, report to the MPI layer and let it take
      * further action. */
     /* transition this from the RTE thread to the MPI progress engine */
@@ -613,6 +625,7 @@ static void ompi_errhandler_construct(ompi_errhandler_t *new_errhandler)
   new_errhandler->eh_win_fn       = NULL;
   new_errhandler->eh_file_fn      = NULL;
   new_errhandler->eh_fort_fn      = NULL;
+  new_errhandler->eh_converter_fn = NULL;
 
   memset (new_errhandler->eh_name, 0, MPI_MAX_OBJECT_NAME);
 }

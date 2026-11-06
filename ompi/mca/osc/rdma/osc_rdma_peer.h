@@ -3,11 +3,13 @@
  * Copyright (c) 2014-2018 Los Alamos National Security, LLC.  All rights
  *                         reserved.
  * Copyright (c) 2025      Stony Brook University.  All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #ifndef OMPI_OSC_RDMA_PEER_H
@@ -145,6 +147,8 @@ enum {
     OMPI_OSC_RDMA_PEER_DEMAND_LOCKED        = 0x80,
     /** we can use CPU atomics on that peer */
     OMPI_OSC_RDMA_PEER_CPU_ATOMICS          = 0x100,
+    /** peer's window memory is directly accessible through local_base */
+    OMPI_OSC_RDMA_PEER_SHARED_MEM           = 0x200,
 };
 
 /**
@@ -164,11 +168,17 @@ int ompi_osc_rdma_new_peer (struct ompi_osc_rdma_module_t *module, int peer_id, 
  *
  * @param[in]  module         osc rdma module
  * @param[in]  peer_id        peer's rank in the communicator
+ * @param[out] status         why the lookup failed (ignored when NULL)
  *
  * This function is used by the ompi_osc_rdma_module_peer() inline function to allocate a peer object. It is not
  * intended to be called from anywhere else.
+ *
+ * A NULL return is final: no BTL claimed the peer, or allocation
+ * failed. A peer that has not published its connection info yet is
+ * waited for here, since an RMA operation cannot come back later.
  */
-struct ompi_osc_rdma_peer_t *ompi_osc_rdma_peer_lookup (struct ompi_osc_rdma_module_t *module, int peer_id);
+struct ompi_osc_rdma_peer_t *ompi_osc_rdma_peer_lookup (struct ompi_osc_rdma_module_t *module, int peer_id,
+                                                        int *status);
 
 /**
  * @brief check if this process holds an exclusive lock on a peer
@@ -230,6 +240,21 @@ static inline bool ompi_osc_rdma_peer_local_base (ompi_osc_rdma_peer_t *peer)
 static inline bool ompi_osc_rdma_peer_cpu_atomics (ompi_osc_rdma_peer_t *peer)
 {
     return ompi_osc_rdma_peer_local_base(peer) && !!(peer->flags & OMPI_OSC_RDMA_PEER_CPU_ATOMICS);
+}
+
+/**
+ * @brief check if the peer's window memory is mapped into this process
+ *
+ * @param[in] peer            peer object to check
+ *
+ * Unlike ompi_osc_rdma_peer_local_base(), this only says that the memory can
+ * be reached with direct loads and stores through the peer's local_base
+ * field.  It does not imply that RMA operations on the peer are performed
+ * that way, which additionally requires that cpu atomics be usable.
+ */
+static inline bool ompi_osc_rdma_peer_shared_mem (ompi_osc_rdma_peer_t *peer)
+{
+    return !!(peer->flags & OMPI_OSC_RDMA_PEER_SHARED_MEM);
 }
 
 /**

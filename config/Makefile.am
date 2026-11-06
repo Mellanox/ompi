@@ -21,6 +21,7 @@
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 # This is a weird place for this, but config/ is the first directory that
@@ -40,8 +41,8 @@ EXTRA_DIST = \
         distscript.sh \
         opal_get_version.m4sh \
         ltmain_nag_pthread.diff \
-        ltmain_pgi_tp.diff \
-        opal_mca_priority_sort.pl \
+        ltmain_flang_darwin.diff \
+        ompi_check_layering.sh \
         find_common_syms \
         getdate.sh \
         from-savannah/upstream-config.guess \

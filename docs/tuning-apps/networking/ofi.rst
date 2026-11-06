@@ -1,15 +1,9 @@
 OpenFabrics Interfaces (OFI) / Libfabric support
 ================================================
 
-.. error:: TODO This section needs to be converted from FAQ Q&A style
-           to regular documentation style.
-
-What is OFI / Libfabric?
-------------------------
-
 "OFI" stands for the `OpenFabrics Interfaces
 <https://libfabric.org/>`_, which are implemented in the ``libfabric``
-library.  These two terms are typically used interchangeably.
+library; the two terms are typically used interchangeably.
 
 Open MPI supports many different underlying networks via Libfabric,
 including (but not limited to):
@@ -19,117 +13,258 @@ including (but not limited to):
 * Cornelis Networks Omni-Path
 * HPE Slingshot 11
 
-In general, the OFI-based components in Open MPI will auto-select
-themselves as appropriate at run time.
+In general, the OFI-based components in Open MPI auto-select themselves
+as appropriate at run time.  The remaining sections describe the
+OFI-based components and the tuning options for specific OFI-based
+network types.
 
-That being said, additional questions are available in this FAQ
-section to provide more information about specific OFI-based network
-types and support.
+Libfabric (OFI) components in Open MPI
+--------------------------------------
 
-/////////////////////////////////////////////////////////////////////////
+Open MPI has three main components for Libfabric (OFI) communication:
 
-What are the Libfabric (OFI) components in Open MPI?
-----------------------------------------------------
+#. The ``ofi`` MTL, available since Open MPI v1.10, is used with the
+   ``cm`` PML for two-sided MPI communication (for example,
+   ``MPI_Send`` and ``MPI_Recv``).  It requires that the Libfabric
+   provider support reliable datagrams with ordered tagged messaging
+   |mdash| specifically, ``FI_EP_RDM`` endpoints, ``FI_TAGGED``
+   capabilities, and ``FI_ORDER_SAS`` ordering.
 
-Open MPI has three main components for Libfabric (a.k.a., OFI)
-communications:
+#. The ``ofi`` BTL, available since Open MPI v4.0.0, is primarily
+   intended for one-sided MPI communication (for example,
+   ``MPI_Put``), but can also support BTL send/receive operations.  It
+   requires that the Libfabric provider support reliable datagrams, RMA
+   and atomic operations, and remote atomic completion notifications
+   |mdash| specifically, ``FI_EP_RDM`` endpoints, ``FI_RMA`` and
+   ``FI_ATOMIC`` capabilities, and the ``FI_DELIVERY_COMPLETE`` op
+   flag.
 
-#. ``ofi`` MTL: Available since Open MPI v1.10, this component is used
-   with the ``cm`` PML and is used for two-sided MPI communication
-   (e.g., ``MPI_SEND`` and ``MPI_RECV``).
+#. The ``usnic`` BTL is used exclusively with Cisco usNIC-based
+   networks.  It auto-selects itself over the other OFI-based
+   components when run on such networks.
 
-  The ``ofi`` MTL requires that the Libfabric provider support
-  reliable datagrams with ordered tagged messaging (specifically:
-  ``FI_EP_RDM`` endpoints, ``FI_TAGGED`` capabilities, and
-  ``FI_ORDER_SAS`` ordering).
+Consult each Libfabric provider's man page (for example,
+``fi_sockets(7)``) to understand which provider will work for each of
+the components above.  Some providers must be paired with a Libfabric
+utility provider; for example, the verbs provider needs the ``ofi_rxm``
+utility provider to supply reliable datagram endpoint support
+(``verbs;ofi_rxm``).
 
-#. ``ofi`` BTL: Available since Open MPI v4.0.0, this component is primarily
-   intended for one-sided MPI communications (e.g., ``MPI_PUT``). It
-   can also support BTL send/recv operations.
-   ``ofi`` BTL requires that the Libfabric provider support reliable
-   datagrams, RMA and atomic operations, and remote atomic completion
-   notifications (specifically: ``FI_EP_RDM`` endpoints, ``FI_RMA``
-   and ``FI_ATOMIC`` capabilities, and ``FI_DELIVERY_COMPLETE`` op
-   flags).
-
-#. ``usnic`` BTL: This BTL is used exclusively with Cisco usNIC-based
-   networks.  It will auto-select itself over the other OFI-based
-   components when run with Cisco usNIC-based networks.
-
-See each Lifabric provider man page (e.g., fi_sockets(7)) to understand which
-provider will work for each of the above-listed Open MPI components. Some
-providers may require to be used with one of the Libfabric utility providers;
-for example, the verbs provider needs to be paired with utility provider
-``ofi_rxm`` to provide reliable datagram endpoint support (``verbs;ofi_rxm``).
-
-Both components have MCA parameters to specify the Libfabric provider(s) that
-will be included/excluded in the selection process. For example:
+Each component has MCA parameters that specify the Libfabric
+provider(s) to include in or exclude from the selection process.  For
+example:
 
 .. code-block::
 
-   shell$ mpirun --mca pml cm --mca mtl ofi --mca mtl_ofi_provider_include psm2 mpi_hello
+   shell$ mpirun --mca pml cm --mca mtl ofi \
+          --mca mtl_ofi_provider_include psm2 ./mpi_hello
 
-In addition, each component has specific parameters for each one; see
-``ompi_info --param <framework> <component> -level 9`` for a full
-list. For example:
+Each component also has its own component-specific parameters; use
+``ompi_info`` to list them.  For example:
 
 .. code-block::
 
    shell$ ompi_info --param mtl ofi --level 9
 
-.. important:: When using the HPE CXI provider and ``mpirun`` as the job launcher,
-          it is recommended that the PRTE ``ras_base_launch_orted_on_hn`` MCA parameter be set to 1.
-          This can be done by adding ``--prtemca ras_base_launch_orted_on_hn 1`` to the job launch
-          command line.  This ensures that MPI processes launched on the first node of
-          an allocation are able to use the CXI provider.
-          
-For more information refer to the `Libfabric web site
+Provider and domain selection
+-----------------------------
+
+Open MPI asks Libfabric for a list of ``fi_info`` structures that satisfy the
+capabilities required by the selected component.  An ``fi_info`` structure
+describes a provider, its fabric, and a domain.  In this context, a Libfabric
+domain is the provider's view of a usable network resource; on many systems it
+corresponds to one network interface card or one provider-specific network
+endpoint.  The domain name is reported in the ``fi_info`` structure and is not
+necessarily the same as the operating system device name.
+
+The ``ofi`` MTL and the ``ofi`` BTL use the common Open MPI selection code.
+The selection process is:
+
+#. Open MPI applies the provider include or exclude setting to the structures
+   returned by Libfabric.  These settings select provider names, not arbitrary
+   hardware device names.
+#. Open MPI selects one compatible provider structure.  When several structures
+   describe domains of the same provider with the same requested capabilities,
+   those structures are candidates for local-resource selection.
+#. If the process is not bound to a set of processing units, Open MPI selects
+   among the candidate domains using the process's local rank.  This is a
+   round-robin choice intended to balance ranks across domains.
+#. If the process is bound and the structures contain usable PCI information,
+   Open MPI calculates device locality and selects a domain closest to the
+   process.  If several domains are equally close, the process's rank within
+   its processor package selects among the tied domains.
+#. If accelerator locality is enabled and the accelerator and provider expose
+   usable PCI information, Open MPI first attempts to select the domain closest
+   to the accelerator.  Ties are distributed using the local rank on that
+   accelerator.
+#. If locality information is unavailable, Open MPI falls back to the rank-based
+   round-robin choice.  A process that is not bound cannot receive a locality
+   guarantee from the operating system.
+
+This selection is performed independently by each MPI process.  It does not
+mean that every process opens every domain, and it does not guarantee that a
+particular operating system interface is selected.  The provider's ``fi_info``
+structures, process binding, PCI topology information, and the selected Open MPI
+component all affect the result.  Open MPI then opens the selected Libfabric
+fabric and domain and creates its endpoints and completion resources.
+
+The common selection parameter is exposed through component-specific aliases.
+For example, these commands show the provider and selection diagnostics for
+the matching transport layer and the byte transfer layer:
+
+.. code-block:: sh
+
+   shell$ mpirun --mca mtl_ofi_verbose 1 \
+          --mca mtl_ofi_provider_include cxi ./mpi_hello
+   shell$ mpirun --mca btl_ofi_verbose 1 \
+          --mca btl_ofi_provider_include cxi ./mpi_hello
+
+The exact diagnostics and available component parameters depend on the Open
+MPI and Libfabric versions in use.  ``ompi_info`` is the authoritative way to
+list the parameters in a particular installation.
+
+LINKx provider
+--------------
+
+Libfabric also provides a provider named ``lnx`` (LINKx).  LINKx can combine
+multiple Libfabric providers or domains behind one tagged-message endpoint. It
+is an optional Libfabric feature, not an Open MPI-specific network component.
+Whether it is appropriate depends on the provider versions, the system
+topology, and the performance goals of the deployment.  HPE or the site
+administrator should confirm that it is recommended for a particular
+Slingshot installation before it is enabled.
+
+The provider must be configured through the Libfabric environment variable
+``FI_LNX_PROV_LINKS``.  For example, the following requests one LINKx group
+containing shared memory and two Slingshot domains:
+
+.. code-block:: sh
+
+   shell$ export FI_LNX_PROV_LINKS="shm+cxi:cxi0,cxi1"
+   shell$ mpirun --mca pml cm --mca mtl ofi \
+          --mca mtl_ofi_provider_include lnx ./mpi_hello
+
+The provider manual(man fi_lnx) describes additional forms, including multiple
+groups and provider-specific domain lists.  All nodes in the MPI job must use
+compatible LINKx configurations and the same ordering of linked providers and
+domains.  If shared memory is included, LINKx uses it for intra-node
+communication; other linked providers are used for off-node communication.
+LINKx can also distribute messages across multiple linked domains, according
+to its multi-rail selection policy.
+
+There are important tradeoffs.  The LINKx provider described by the current
+Libfabric manual supports tagged operations, but does not provide hardware
+offload such as hardware tag matching.  Because memory registration does not
+identify the eventual operation or destination, LINKx registers memory with
+all linked providers.  This can increase memory registration cost and may
+affect memory behavior.  Measure an application with and without LINKx before
+making it a site-wide default.
+
+HPE Slingshot
+-------------
+
+Open MPI supports HPE Slingshot through the Libfabric ``cxi`` provider.  The
+``cxi`` provider maps Open MPI communication operations to the Slingshot
+Cassini network interface card and Rosetta switch.
+
+Open MPI normally selects its OpenFabrics Interfaces components automatically.
+To request the tagged-message path explicitly, select the ``cm`` PML and
+``ofi`` MTL, and include the ``cxi`` provider.  When the selected provider
+supports hardware tag matching, message matching can be offloaded from the
+host processor to the network interface card.  The ``cxi`` provider supports
+this capability.  Tagged messages carry a numeric label that Open MPI uses to
+match a send operation to the correct receive operation:
+
+.. code-block:: sh
+
+   shell$ mpirun --mca pml cm --mca mtl ofi \
+          --mca mtl_ofi_provider_include cxi ./mpi_hello
+
+Use the Libfabric ``fi_info`` utility to confirm that the installed Libfabric
+can find the ``cxi`` provider:
+
+.. code-block:: sh
+
+   shell$ fi_info -p cxi
+
+.. important:: When using the HPE CXI provider with ``mpirun`` as the
+               job launcher, it is recommended to set the PRRTE
+               ``ras_base_launch_orted_on_hn`` MCA parameter to 1 by
+               adding ``--prtemca ras_base_launch_orted_on_hn 1`` to
+               the job launch command line.  This ensures that MPI
+               processes launched on the first node of an allocation
+               are able to use the CXI provider.
+
+For more information, refer to the `Libfabric web site
 <https://libfabric.org/>`_.
 
-/////////////////////////////////////////////////////////////////////////
+Omni-Path: multi-rail with multiple HFI cards
+---------------------------------------------
 
-Omni-Path: How can the multi-rail settings be adjusted if multiple HFI (Host Fabric Interface) cards are installed on the system?
----------------------------------------------------------------------------------------------------------------------------------
+The multi-rail feature lets a single process use multiple Host Fabric
+Interface (HFI) cards to transfer a message, improving message
+bandwidth.  The PSM2 library provides multi-rail support, which is off
+by default.  The behavior is controlled with the following environment
+variables:
 
-Multi-Rail feature allows a process to use multiple HFIs to transfer a message
-to improve message bandwidth. The PSM2 library handles the support for multi-rail
-which is off by default. The multi-rail settings can be modified using the
-following environment variables:
+* ``PSM2_MULTIRAIL=[0,1,2]``: 0 disables multi-rail, 1 enables it
+  across all HFIs in the system, and 2 enables multi-rail within a NUMA
+  node.
+* ``PSM2_MULTIRAIL_MAP=unit:port,unit:port,...``
 
-* ``PSM2_MULTIRAIL=[0,1,2] ]``: 0=Disabled, 1=Enable across all HFIs in the
-  system, 2=Enable multi-rail within a NUMA node.
-* ``PSM2_MULTIRAIL_MAP=unit:port,unit:port...``
-
-The variables above may be included in the ``mpirun`` command line or in
-the environment. For example:
+These variables may be set on the ``mpirun`` command line or in the
+environment.  For example:
 
 .. code-block::
 
-   shell$ mpirun -mca mtl [psm2|ofi] -x PSM2_MULTIRAIL=1 -n 2 -H host1,host2 ./a.out
+   shell$ mpirun --mca mtl [psm2|ofi] -x PSM2_MULTIRAIL=1 \
+          -n 2 -H host1,host2 ./a.out
 
-.. note:: When using the OFI MTL, please ensure that the PSM2 OFI
-          provider is used for communication with OPA devices.
+.. note:: When using the OFI MTL, ensure that the PSM2 OFI provider is
+          used for communication with OPA devices.
 
-/////////////////////////////////////////////////////////////////////////
+Omni-Path: multi-HFI support in PSM2
+------------------------------------
 
-Omni-Path: What is Multi-HFI support in PSM2 and how does it differ from multi-rail?
-------------------------------------------------------------------------------------
+Multi-HFI support describes the use of multiple HFIs in a system among
+the MPI ranks local to a node, in order to load-balance the hardware
+resources.  It differs from the multi-rail feature, which allows a
+single process to use all HFIs in the system.  For an MPI job with
+multiple processes on a single node, the default PSM2 behavior depends
+on the affinity settings of the MPI process: the PSM2 library defaults
+to using the HFI that is in the same NUMA node as the MPI process.
 
-Multi-HFI support is intended to describe the use of multiple HFIs in
-a system among MPI ranks local to a node in order to load-balance the
-hardware resources. It differs from the Multi-Rail feature, which is
-intended to allow a single process to use all HFIs in the system. For
-an MPI job with multiple processes on a single node, the default PSM2
-behavior depends on the affinity settings of the MPI process. The PSM2
-library defaults to using the HFI (Host Fabric Interface) that is in
-the same NUMA node as that of the MPI process.
+Users can restrict a process to a single HFI with an environment
+variable:
 
-Users can restrict access to a single HFI using the environment variable:
+* ``HFI_UNIT=N``: valid values of ``N`` are 0, 1, 2, and 3.
 
-* ``HFI_UNIT=N``: valid values of N are 0,1,2 and 3
+More details can be found in the PSM2 Programmer's Guide and the
+Omni-Path Fabric Performance Tuning Guide; see the `Cornelis Networks
+Customer Center <https://customercenter.cornelisnetworks.com/>`_.
 
-More details can be found on the PSM2 Programmer's Guide and the Omni-Path
-Fabric Performance Tuning Guide.
+GPU memory and Libfabric providers
+----------------------------------
 
-Please see the `Cornelis Networks Customer Center <https://customercenter.cornelisnetworks.com/>`_
-for more details.
+When an MPI buffer resides in graphics processing unit memory, Open MPI can
+request Libfabric support for heterogeneous memory through the ``FI_HMEM``
+capability.  The ``ofi`` matching transport layer and byte transfer layer
+request this capability by default when it is available in the build.  The
+matching transport layer and byte transfer layer can disable the request
+with ``mtl_ofi_disable_hmem`` and ``btl_ofi_disable_hmem``, respectively.
+
+Requesting heterogeneous-memory support does not guarantee direct network
+access to every type of GPU memory.  The selected provider must advertise the
+required capability, and the Libfabric build must include support for the GPU
+runtime in use.  If no suitable provider is found with heterogeneous-memory
+requirements, Open MPI may retry provider discovery without that requirement;
+this can result in host-memory staging or a provider that does not support
+direct GPU buffers.
+
+LINKx deserves additional care for GPU buffers.  LINKx forwards memory
+registration to all providers in a link, and the linked providers may have
+different GPU-memory capabilities.  A LINKx configuration should therefore
+contain only providers that support the intended buffer type and memory
+registration mode.  Validate the configuration with a representative
+application and consult the installed provider manuals before using GPU
+buffers in production.

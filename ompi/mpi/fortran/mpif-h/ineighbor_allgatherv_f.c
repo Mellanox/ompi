@@ -15,11 +15,15 @@
  *                         reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2025      Triad National Security, LLC. All rights
+ *                         reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -27,9 +31,10 @@
 #include "ompi/mpi/fortran/mpif-h/bindings.h"
 #include "ompi/mpi/fortran/base/constants.h"
 #include "ompi/mca/coll/base/coll_base_util.h"
+#include "ompi/mpi/fortran/base/fortran_base_topo_neighbors.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_INEIGHBOR_ALLGATHERV = ompi_ineighbor_allgatherv_f
 #pragma weak pmpi_ineighbor_allgatherv = ompi_ineighbor_allgatherv_f
 #pragma weak pmpi_ineighbor_allgatherv_ = ompi_ineighbor_allgatherv_f
@@ -42,13 +47,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_INEIGHBOR_ALLGATHERV,
                             pmpi_ineighbor_allgatherv,
                             pmpi_ineighbor_allgatherv_,
                             pmpi_ineighbor_allgatherv__,
-                            pompi_ineighbor_allgatherv_f,
+                            ompi_ineighbor_allgatherv_f,
                             (char *sendbuf, MPI_Fint *sendcount, MPI_Fint *sendtype, char *recvbuf, MPI_Fint *recvcounts, MPI_Fint *displs, MPI_Fint *recvtype, MPI_Fint *comm, MPI_Fint *request, MPI_Fint *ierr),
                             (sendbuf, sendcount, sendtype, recvbuf, recvcounts, displs, recvtype, comm, request, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_INEIGHBOR_ALLGATHERV = ompi_ineighbor_allgatherv_f
 #pragma weak mpi_ineighbor_allgatherv = ompi_ineighbor_allgatherv_f
 #pragma weak mpi_ineighbor_allgatherv_ = ompi_ineighbor_allgatherv_f
@@ -57,17 +62,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_INEIGHBOR_ALLGATHERV,
 #pragma weak MPI_Ineighbor_allgatherv_f = ompi_ineighbor_allgatherv_f
 #pragma weak MPI_Ineighbor_allgatherv_f08 = ompi_ineighbor_allgatherv_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_INEIGHBOR_ALLGATHERV,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_INEIGHBOR_ALLGATHERV,
                             mpi_ineighbor_allgatherv,
                             mpi_ineighbor_allgatherv_,
                             mpi_ineighbor_allgatherv__,
                             ompi_ineighbor_allgatherv_f,
                             (char *sendbuf, MPI_Fint *sendcount, MPI_Fint *sendtype, char *recvbuf, MPI_Fint *recvcounts, MPI_Fint *displs, MPI_Fint *recvtype, MPI_Fint *comm, MPI_Fint *request, MPI_Fint *ierr),
                             (sendbuf, sendcount, sendtype, recvbuf, recvcounts, displs, recvtype, comm, request, ierr) )
-#else
-#define ompi_ineighbor_allgatherv_f pompi_ineighbor_allgatherv_f
-#endif
 #endif
 
 
@@ -79,7 +80,7 @@ void ompi_ineighbor_allgatherv_f(char *sendbuf, MPI_Fint *sendcount, MPI_Fint *s
     MPI_Comm c_comm;
     MPI_Datatype c_sendtype, c_recvtype;
     MPI_Request c_request;
-    int size, idx = 0, ierr_c;
+    int indegree, outdegree, ierr_c;
     OMPI_ARRAY_NAME_DECL(recvcounts);
     OMPI_ARRAY_NAME_DECL(displs);
 
@@ -87,9 +88,14 @@ void ompi_ineighbor_allgatherv_f(char *sendbuf, MPI_Fint *sendcount, MPI_Fint *s
     c_sendtype = PMPI_Type_f2c(*sendtype);
     c_recvtype = PMPI_Type_f2c(*recvtype);
 
-    PMPI_Comm_size(c_comm, &size);
-    OMPI_ARRAY_FINT_2_INT(recvcounts, size);
-    OMPI_ARRAY_FINT_2_INT(displs, size);
+    ierr_c = ompi_fortran_neighbor_count(c_comm, &indegree, &outdegree);
+    if (MPI_SUCCESS != ierr_c) {
+        if (NULL != ierr) *ierr = OMPI_INT_2_FINT(ierr_c);
+        return;
+    }
+
+    OMPI_ARRAY_FINT_2_INT(recvcounts, indegree);
+    OMPI_ARRAY_FINT_2_INT(displs, indegree);
 
     sendbuf = (char *) OMPI_F2C_IN_PLACE(sendbuf);
     sendbuf = (char *) OMPI_F2C_BOTTOM(sendbuf);
@@ -106,12 +112,11 @@ void ompi_ineighbor_allgatherv_f(char *sendbuf, MPI_Fint *sendcount, MPI_Fint *s
     if (NULL != ierr) *ierr = OMPI_INT_2_FINT(ierr_c);
     if (MPI_SUCCESS == ierr_c) {
         *request = PMPI_Request_c2f(c_request);
-        ompi_coll_base_nbc_request_t* nb_request = (ompi_coll_base_nbc_request_t*)c_request;
-        if (recvcounts != OMPI_ARRAY_NAME_CONVERT(recvcounts)) {
-            nb_request->data.release_arrays[idx++] = OMPI_ARRAY_NAME_CONVERT(recvcounts);
-            nb_request->data.release_arrays[idx++] = OMPI_ARRAY_NAME_CONVERT(displs);
+        if ((void *)recvcounts != (void *)OMPI_ARRAY_NAME_CONVERT(recvcounts)) {
+            ompi_coll_base_append_array_to_release(c_request, OMPI_ARRAY_NAME_CONVERT(recvcounts));
+            ompi_coll_base_append_array_to_release(c_request, OMPI_ARRAY_NAME_CONVERT(displs));
+            ompi_coll_base_add_release_arrays_cb(c_request);
         }
-        nb_request->data.release_arrays[idx]   = NULL;
     } else {
         OMPI_ARRAY_FINT_2_INT_CLEANUP(recvcounts);
         OMPI_ARRAY_FINT_2_INT_CLEANUP(displs);

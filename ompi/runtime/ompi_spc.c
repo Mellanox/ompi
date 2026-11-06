@@ -15,6 +15,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -170,7 +171,11 @@ static const ompi_spc_event_t ompi_spc_events_desc[OMPI_SPC_NUM_COUNTERS] = {
     SET_COUNTER_ARRAY(OMPI_SPC_ISENDRECV, "The number of times MPI_Isendrecv was called.", false, false),
     SET_COUNTER_ARRAY(OMPI_SPC_ISENDRECV_REPLACE, "The number of times MPI_Isendrecv_replace was called.", false, false),
     SET_COUNTER_ARRAY(OMPI_SPC_PARRIVED, "The number of times MPI_Parrived was called.", false, false),
-    SET_COUNTER_ARRAY(OMPI_SPC_PREADY, "The number of times MPI_Pready (or similar functions) was called.", false, false),
+    SET_COUNTER_ARRAY(OMPI_SPC_PREADY, "The number of times MPI_Pready was called.", false, false),
+    SET_COUNTER_ARRAY(OMPI_SPC_PREADY_LIST, "The number of times MPI_Pready_list was called.", false, false),
+    SET_COUNTER_ARRAY(OMPI_SPC_PREADY_RANGE, "The number of times MPI_Pready_range was called.", false, false),
+    SET_COUNTER_ARRAY(OMPI_SPC_PRECV_INIT, "The number of times MPI_Precv_init was called.", false, false),
+    SET_COUNTER_ARRAY(OMPI_SPC_PSEND_INIT, "The number of times MPI_Psend_init was called.", false, false)
 };
 
 /* An array of event structures to store the event data (value, attachments, flags) */

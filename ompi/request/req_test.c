@@ -14,11 +14,13 @@
  * Copyright (c) 2010-2012 Oracle and/or its affiliates.  All rights reserved.
  * Copyright (c) 2012      Oak Ridge National Labs.  All rights reserved.
  * Copyright (c) 2025      NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -41,7 +43,7 @@ recheck_request_status:
     if( request->req_state == OMPI_REQUEST_INACTIVE ) {
         *completed = true;
         if (MPI_STATUS_IGNORE != status) {
-            OMPI_COPY_STATUS(status, ompi_status_empty, false);
+            OMPI_COPY_STATUS(status, ompi_status_empty, true);
         }
         return OMPI_SUCCESS;
     }
@@ -170,7 +172,7 @@ int ompi_request_default_test_any(
     } else {
         *completed = true;
         if (MPI_STATUS_IGNORE != status) {
-            OMPI_COPY_STATUS(status, ompi_status_empty, false);
+            OMPI_COPY_STATUS(status, ompi_status_empty, true);
         }
     }
     return OMPI_SUCCESS;
@@ -249,7 +251,7 @@ int ompi_request_default_test_all(
                 ompi_grequest_invoke_query(request, &request->req_status);
             }
             OMPI_COPY_STATUS(&statuses[i], request->req_status, true);
-            if (MPI_SUCCESS == request->req_status.MPI_ERROR) {
+            if (MPI_SUCCESS != request->req_status.MPI_ERROR) {
                 rc = MPI_ERR_IN_STATUS;
 #if OPAL_ENABLE_FT_MPI
                 if (MPI_ERR_PROC_FAILED == request->req_status.MPI_ERROR

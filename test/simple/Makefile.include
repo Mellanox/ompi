@@ -18,6 +18,7 @@
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 # Note that this file does not stand on its own.  It is included by a
@@ -57,4 +58,5 @@ EXTRA_DIST += \
         test/mpi/spawn_tree.c \
         test/mpi/info_spawn.c \
 		test/mpi/pmix.c \
-		test/mpi/xlib.c
+		test/mpi/xlib.c \
+        test/simple/create_from_group_first_msg.c

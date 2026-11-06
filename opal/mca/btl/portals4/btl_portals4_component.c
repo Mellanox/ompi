@@ -18,11 +18,13 @@
  * Copyright (c) 2020      Google, LLC. All rights reserved.
  * Copyright (c) 2020      Amazon.com, Inc. or its affiliates.
  *                         All Rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "opal_config.h"
@@ -227,7 +229,8 @@ static int mca_btl_portals4_component_open(void)
          * module, so it gets copied into the module for each Portals4
          * interface during init().
          */
-        mca_btl_portals4_module.super.btl_flags |= MCA_BTL_FLAGS_SINGLE_ADD_PROCS;
+        mca_btl_portals4_module.super.btl_flags |= MCA_BTL_FLAGS_SINGLE_ADD_PROCS |
+                                                   MCA_BTL_FLAGS_REQUIRE_SYNC_INIT;
     }
 
     return OPAL_SUCCESS;

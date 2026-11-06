@@ -25,6 +25,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  *
  * This file prototypes all MPI fortran functions in all four fortran
  * symbol conventions as well as all the internal real OMPI wrapper
@@ -85,6 +86,12 @@ BEGIN_C_DECLS
     OMPI_DECLSPEC ret P##mixed_name##_f08 args;            \
     OMPI_DECLSPEC ret P##mixed_name##_f args
 
+PN2(void, MPI_Abi_get_fortran_booleans, mpi_abi_get_fortran_booleans, MPI_ABI_GET_FORTRAN_BOOLEANS , (MPI_Fint *logical_size, ompi_fortran_logical_t *logical_true, ompi_fortran_logical_t *logical_false, ompi_fortran_logical_t *is_set, MPI_Fint *ierr));
+PN2(void, MPI_Abi_get_fortran_info, mpi_abi_get_fortran_info, MPI_ABI_GET_FORTRAN_INFO , (MPI_Fint *info, MPI_Fint *ierr));
+PN2(void, MPI_Abi_get_info, mpi_abi_get_info, MPI_ABI_GET_INFO , (MPI_Fint *info, MPI_Fint *ierr));
+PN2(void, MPI_Abi_get_version, mpi_abi_get_version, MPI_ABI_GET_VERSION , (MPI_Fint *abi_major, MPI_Fint *abi_minor, MPI_Fint *ierr));
+PN2(void, MPI_Abi_set_fortran_booleans, mpi_abi_set_fortran_booleans, MPI_ABI_SET_FORTRAN_BOOLEANS , (MPI_Fint *logical_size, ompi_fortran_logical_t *logical_true, ompi_fortran_logical_t *logical_false, MPI_Fint *ierr));
+PN2(void, MPI_Abi_set_fortran_info, mpi_abi_set_fortran_info, MPI_ABI_SET_FORTRAN_INFO , (MPI_Fint *info, MPI_Fint *ierr));
 PN2(void, MPI_Abort, mpi_abort, MPI_ABORT, (MPI_Fint *comm, MPI_Fint *errorcode, MPI_Fint *ierr));
 PN2(void, MPI_Accumulate, mpi_accumulate, MPI_ACCUMULATE, (char *origin_addr, MPI_Fint *origin_count, MPI_Fint *origin_datatype, MPI_Fint *target_rank, MPI_Aint *target_disp, MPI_Fint *target_count, MPI_Fint *target_datatype, MPI_Fint *op, MPI_Fint *win, MPI_Fint *ierr));
 PN2(void, MPI_Add_error_class, mpi_add_error_class, MPI_ADD_ERROR_CLASS, (MPI_Fint *errorclass, MPI_Fint *ierr));
@@ -120,6 +127,7 @@ PN2(void, MPI_Bsend_init, mpi_bsend_init, MPI_BSEND_INIT, (char *buf, MPI_Fint *
 PN2(void, MPI_Buffer_attach, mpi_buffer_attach, MPI_BUFFER_ATTACH, (char *buffer, MPI_Fint *size, MPI_Fint *ierr));
 PN2(void, MPI_Buffer_detach, mpi_buffer_detach, MPI_BUFFER_DETACH, (char *buffer, MPI_Fint *size, MPI_Fint *ierr));
 PN2(void, MPI_Buffer_flush, mpi_buffer_flush, MPI_BUFFER_FLUSH, (MPI_Fint *ierr));
+PN2(void, MPI_Buffer_iflush, mpi_buffer_iflush, MPI_BUFFER_IFLUSH, (MPI_Fint *request, MPI_Fint *ierr));
 PN2(void, MPI_Cancel, mpi_cancel, MPI_CANCEL, (MPI_Fint *request, MPI_Fint *ierr));
 PN2(void, MPI_Cart_coords, mpi_cart_coords, MPI_CART_COORDS, (MPI_Fint *comm, MPI_Fint *rank, MPI_Fint *maxdims, MPI_Fint *coords, MPI_Fint *ierr));
 PN2(void, MPI_Cart_create, mpi_cart_create, MPI_CART_CREATE, (MPI_Fint *old_comm, MPI_Fint *ndims, MPI_Fint *dims, ompi_fortran_logical_t *periods, ompi_fortran_logical_t *reorder, MPI_Fint *comm_cart, MPI_Fint *ierr));
@@ -422,9 +430,15 @@ PN2(void, MPI_Start, mpi_start, MPI_START, (MPI_Fint *request, MPI_Fint *ierr));
 PN2(void, MPI_Startall, mpi_startall, MPI_STARTALL, (MPI_Fint *count, MPI_Fint *array_of_requests, MPI_Fint *ierr));
 PN2(void, MPI_Status_f082f, mpi_status_f082f, MPI_STATUS_F082F, (const MPI_F08_status *f08_status, MPI_Fint *f_status, MPI_Fint *ierr));
 PN2(void, MPI_Status_f2f08, mpi_status_f2f08, MPI_STATUS_F2F08, (const MPI_Fint *f_status, MPI_F08_status *f08_status, MPI_Fint *ierr));
+PN2(void, MPI_Status_get_error, mpi_status_get_error, MPI_STATUS_GET_ERROR, (MPI_Fint *status, MPI_Fint *err, MPI_Fint *ierr));
+PN2(void, MPI_Status_get_source, mpi_status_get_source, MPI_STATUS_GET_SOURCE, (MPI_Fint *status, MPI_Fint *source, MPI_Fint *ierr));
+PN2(void, MPI_Status_get_tag, mpi_status_get_tag, MPI_STATUS_GET_TAG, (MPI_Fint *status, MPI_Fint *tag, MPI_Fint *ierr));
 PN2(void, MPI_Status_set_cancelled, mpi_status_set_cancelled, MPI_STATUS_SET_CANCELLED, (MPI_Fint *status, ompi_fortran_logical_t *flag, MPI_Fint *ierr));
 PN2(void, MPI_Status_set_elements, mpi_status_set_elements, MPI_STATUS_SET_ELEMENTS, (MPI_Fint *status, MPI_Fint *datatype, MPI_Fint *count, MPI_Fint *ierr));
 PN2(void, MPI_Status_set_elements_x, mpi_status_set_elements_x, MPI_STATUS_SET_ELEMENTS_X, (MPI_Fint *status, MPI_Fint *datatype, MPI_Count *count, MPI_Fint *ierr));
+PN2(void, MPI_Status_set_error, mpi_status_set_error, MPI_STATUS_SET_ERROR, (MPI_Fint *status, MPI_Fint *err, MPI_Fint *ierr));
+PN2(void, MPI_Status_set_source, mpi_status_set_source, MPI_STATUS_SET_SOURCE, (MPI_Fint *status, MPI_Fint *source, MPI_Fint *ierr));
+PN2(void, MPI_Status_set_tag, mpi_status_set_tag, MPI_STATUS_SET_TAG, (MPI_Fint *status, MPI_Fint *tag, MPI_Fint *ierr));
 PN2(void, MPI_Testall, mpi_testall, MPI_TESTALL, (MPI_Fint *count, MPI_Fint *array_of_requests, ompi_fortran_logical_t *flag, MPI_Fint *array_of_statuses, MPI_Fint *ierr));
 PN2(void, MPI_Testany, mpi_testany, MPI_TESTANY, (MPI_Fint *count, MPI_Fint *array_of_requests, MPI_Fint *index, ompi_fortran_logical_t *flag, MPI_Fint *status, MPI_Fint *ierr));
 PN2(void, MPI_Test, mpi_test, MPI_TEST, (MPI_Fint *request, ompi_fortran_logical_t *flag, MPI_Fint *status, MPI_Fint *ierr));

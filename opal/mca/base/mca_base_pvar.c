@@ -9,11 +9,13 @@
  *                         reserved.
  * Copyright (c) 2017      IBM Corporation. All rights reserved.
  * Copyright (c) 2018      Amazon.com, Inc. or its affiliates.  All Rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "opal/mca/base/mca_base_pvar.h"
@@ -347,7 +349,7 @@ int mca_base_component_pvar_register(const mca_base_component_t *component, cons
 
 static int mca_base_pvar_get_internal(int index, mca_base_pvar_t **pvar, bool invalidok)
 {
-    if (index >= pvar_count) {
+    if (index < 0 || index >= pvar_count) {
         return OPAL_ERR_VALUE_OUT_OF_BOUNDS;
     }
 

@@ -17,6 +17,7 @@ dnl
 dnl Additional copyrights may follow
 dnl
 dnl $HEADER$
+dnl SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 dnl
 
 # OPAL_FIND_TYPE(type, [list of c types], abort if not found,
@@ -34,7 +35,11 @@ AC_DEFUN([OPAL_FIND_TYPE],[
          AS_IF([test "$oft_target_size" != ""],
              [m4_foreach(oft_type, [$2],
                   [if test -z "$oft_real_type"; then
-                       if test "[$ac_cv_sizeof_]m4_bpatsubst(oft_type, [[^a-zA-Z0-9_]], [_])" = "$oft_target_size" ; then
+                       dnl AS_TR_SH expands literals via m4_translit, which is
+                       dnl locale-independent; m4_bpatsubst regex character
+                       dnl classes are not (e.g. cs_CZ.UTF-8 collates "ch" as
+                       dnl one element, mangling "char" -> "_ar").
+                       if test "[$ac_cv_sizeof_]AS_TR_SH(oft_type)" = "$oft_target_size" ; then
                            oft_real_type="oft_type"
                        fi
                    fi

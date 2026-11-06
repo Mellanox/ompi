@@ -21,6 +21,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -128,7 +129,9 @@ bool ompi_request_is_failed_fn(ompi_request_t *req)
             req->req_status.MPI_ERROR  = MPI_ERR_PROC_FAILED_PENDING;
             /* If it is a probe/mprobe, escalate the error */
             if( (MCA_PML_REQUEST_MPROBE == pml_req->req_type) ||
-                (MCA_PML_REQUEST_PROBE == pml_req->req_type) ) {
+                (MCA_PML_REQUEST_IMPROBE == pml_req->req_type) ||
+                (MCA_PML_REQUEST_PROBE == pml_req->req_type) ||
+                (MCA_PML_REQUEST_IPROBE == pml_req->req_type) ) {
                 req->req_status.MPI_ERROR  = MPI_ERR_PROC_FAILED;
             }
             opal_output_verbose(10, ompi_ftmpi_output_handle,

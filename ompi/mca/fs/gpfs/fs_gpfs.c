@@ -12,11 +12,13 @@
  * Copyright (c) 2008-2018 University of Houston. All rights reserved.
  * Copyright (c) 2018      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  *
  * These symbols are in a file by themselves to provide nice linker
  * semantics. Since linkers generally pull in symbols by object fules,
@@ -138,5 +140,6 @@ int mca_fs_gpfs_module_init (ompio_file_t *file)
 
 int mca_fs_gpfs_module_finalize (ompio_file_t *file)
 {
+    mca_fs_gpfs_info_cache_free(file);
     return OMPI_SUCCESS;
 }

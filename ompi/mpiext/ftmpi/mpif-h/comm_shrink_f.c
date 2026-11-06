@@ -7,6 +7,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 #include "ompi_config.h"
 
@@ -18,7 +19,7 @@
 
 #include "ompi/communicator/communicator.h"
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPIX_COMM_SHRINK = ompix_comm_shrink_f
 #pragma weak pmpix_comm_shrink = ompix_comm_shrink_f
 #pragma weak pmpix_comm_shrink_ = ompix_comm_shrink_f
@@ -33,7 +34,7 @@
 #pragma weak MPIX_Comm_shrink_f = ompix_comm_shrink_f
 #pragma weak MPIX_Comm_shrink_f08 = ompix_comm_shrink_f
 
-#else /* No weak symbols */
+#else /* No weak aliases */
 OMPI_GENERATE_F77_BINDINGS(PMPIX_COMM_SHRINK,
                         pmpix_comm_shrink,
                         pmpix_comm_shrink_,

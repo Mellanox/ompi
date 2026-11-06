@@ -25,12 +25,13 @@
  * Copyright (c) 2018-2026 Triad National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2023      Advanced Micro Devices, Inc. All rights reserved.
- * Copyright (c) 2024      NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2024-2026 NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #ifndef OMPI_COMMUNICATOR_H
@@ -68,8 +69,7 @@ OMPI_DECLSPEC OBJ_CLASS_DECLARATION(ompi_communicator_t);
 #define OMPI_COMM_CART         0x00000100
 #define OMPI_COMM_GRAPH        0x00000200
 #define OMPI_COMM_DIST_GRAPH   0x00000400
-#define OMPI_COMM_PML_ADDED    0x00001000
-#define OMPI_COMM_EXTRA_RETAIN 0x00004000
+#define OMPI_COMM_PML_ADDED    0x00001000 /**< set only after pml add_comm() */
 #define OMPI_COMM_MAPBY_NODE   0x00008000
 #define OMPI_COMM_GLOBAL_INDEX 0x00010000
 
@@ -86,7 +86,6 @@ OMPI_DECLSPEC OBJ_CLASS_DECLARATION(ompi_communicator_t);
 #define OMPI_COMM_IS_DISJOINT_SET(comm) ((comm)->c_flags & OMPI_COMM_DISJOINT_SET)
 #define OMPI_COMM_IS_DISJOINT(comm) ((comm)->c_flags & OMPI_COMM_DISJOINT)
 #define OMPI_COMM_IS_PML_ADDED(comm) ((comm)->c_flags & OMPI_COMM_PML_ADDED)
-#define OMPI_COMM_IS_EXTRA_RETAIN(comm) ((comm)->c_flags & OMPI_COMM_EXTRA_RETAIN)
 #define OMPI_COMM_IS_TOPO(comm) (OMPI_COMM_IS_CART((comm)) || \
                                  OMPI_COMM_IS_GRAPH((comm)) || \
                                  OMPI_COMM_IS_DIST_GRAPH((comm)))
@@ -97,7 +96,6 @@ OMPI_DECLSPEC OBJ_CLASS_DECLARATION(ompi_communicator_t);
 #define OMPI_COMM_SET_INVALID(comm) ((comm)->c_flags |= OMPI_COMM_INVALID)
 
 #define OMPI_COMM_SET_PML_ADDED(comm) ((comm)->c_flags |= OMPI_COMM_PML_ADDED)
-#define OMPI_COMM_SET_EXTRA_RETAIN(comm) ((comm)->c_flags |= OMPI_COMM_EXTRA_RETAIN)
 #define OMPI_COMM_SET_MAPBY_NODE(comm) ((comm)->c_flags |= OMPI_COMM_MAPBY_NODE)
 
 #define OMPI_COMM_ASSERT_NO_ANY_TAG     0x00000001
@@ -148,8 +146,6 @@ OMPI_DECLSPEC OBJ_CLASS_DECLARATION(ompi_communicator_t);
  */
 #define OMPI_COMM_SENTINEL        0x00000001
 
-/* A macro comparing two CIDs */
-#define OMPI_COMM_CID_IS_LOWER(comm1,comm2) ( ((comm1)->c_index < (comm2)->c_index)? 1:0)
 
 OMPI_DECLSPEC extern opal_hash_table_t ompi_comm_hash;
 OMPI_DECLSPEC extern opal_pointer_array_t ompi_mpi_communicators;
@@ -822,6 +818,10 @@ typedef struct ompi_comm_rbcast_message_t {
     uint8_t  type;
 } ompi_comm_rbcast_message_t;
 
+/* The return value is not a status: it says whether the message is news
+ * to us and therefore has to be forwarded to complete the broadcast.
+ * Zero stops it here -- a duplicate, or nothing this process has to act
+ * on -- and non-zero passes it on. */
 typedef int (*ompi_comm_rbcast_cb_t)(ompi_communicator_t* comm, ompi_comm_rbcast_message_t* msg);
 
 OMPI_DECLSPEC int ompi_comm_rbcast_register_cb_type(ompi_comm_rbcast_cb_t callback);
@@ -931,16 +931,6 @@ int ompi_intercomm_create_from_groups (ompi_group_t *local_group, int local_lead
                                        ompi_communicator_t **newintercomm);
 
 /**
- * Take an almost complete communicator and reserve the CID as well
- * as activate it (initialize the collective and the topologies).
- */
-int ompi_comm_enable(ompi_communicator_t *old_comm,
-                     ompi_communicator_t *new_comm,
-                     int new_rank,
-                     int num_procs,
-                     ompi_proc_t** topo_procs);
-
-/**
  * Back end of MPI_DIST_GRAPH_CREATE_ADJACENT
  */
 int ompi_topo_dist_graph_create_adjacent(ompi_communicator_t *old_comm,
@@ -971,12 +961,16 @@ OMPI_DECLSPEC int ompi_comm_split (ompi_communicator_t *comm, int color, int key
  * @param comm: input communicator
  * @param color
  * @param key
+ * @param pass_on_topo: ignored. Splitting a communicator does not propagate
+ *                   the topology of the parent, and no caller has ever asked
+ *                   it to; the parameter is kept only to spare the call sites.
  *
  * @
  */
 OMPI_DECLSPEC int ompi_comm_split_with_info( ompi_communicator_t* comm, int color, int key,
                                              opal_info_t *info,
-                                             ompi_communicator_t **newcomm, bool pass_on_topo );
+                                             ompi_communicator_t **newcomm,
+                                             bool pass_on_topo __opal_attribute_unused__ );
 
 /**
  * split a communicator based on type and key. Parameters
@@ -1020,8 +1014,16 @@ OMPI_DECLSPEC int ompi_comm_idup (ompi_communicator_t *comm, ompi_communicator_t
  *
  * @param comm:      input communicator
  * @param newcomm:   the new communicator or MPI_COMM_NULL if any error is detected.
+ * @param inherit_cached_info: propagate the information cached on comm -- its
+ *                   attributes and its topology -- to newcomm. Duplication is
+ *                   the only MPI communicator constructor that does so, but
+ *                   the topology constructors duplicate a communicator merely
+ *                   to attach a topology of their own and must not inherit
+ *                   either.
  */
-OMPI_DECLSPEC int ompi_comm_dup_with_info (ompi_communicator_t *comm, opal_info_t *info, ompi_communicator_t **newcomm);
+OMPI_DECLSPEC int ompi_comm_dup_with_info (ompi_communicator_t *comm, opal_info_t *info,
+                                           ompi_communicator_t **newcomm,
+                                           bool inherit_cached_info);
 
 /**
  * dup a communicator (non-blocking) with info.
@@ -1052,7 +1054,11 @@ OMPI_DECLSPEC int ompi_comm_free (ompi_communicator_t **comm);
  * @param oldcomm:    original comm
  * @param bridgecomm: bridge comm for intercomm_create
  * @param mode: combination of input
- *              OMPI_COMM_CID_INTRA:        intra-comm
+ *              OMPI_COMM_CID_INTRA:        intra-comm. arg0 is NULL, or points to an
+ *                                          int reserved from the parent's c_nbc_tag;
+ *                                          the rounds then run point-to-point on the
+ *                                          parent with that tag instead of through
+ *                                          its collective module.
  *              OMPI_COMM_CID_INTER:        inter-comm
  *              OMPI_COMM_CID_GROUP:        only decide CID within the ompi_group_t
  *                                          associated with the communicator. arg0
@@ -1082,7 +1088,7 @@ OMPI_DECLSPEC int ompi_comm_nextcid (ompi_communicator_t *newcomm, ompi_communic
  * @param oldcomm:    original comm
  * @param bridgecomm: bridge comm for intercomm_create
  * @param mode: combination of input
- *              OMPI_COMM_CID_INTRA:        intra-comm
+ *              OMPI_COMM_CID_INTRA:        intra-comm (arg0 as for ompi_comm_nextcid)
  *              OMPI_COMM_CID_INTER:        inter-comm
  * This routine has to be thread safe in the final version.
  */
@@ -1176,17 +1182,26 @@ int ompi_comm_determine_first ( ompi_communicator_t *intercomm,
  */
 int ompi_comm_determine_first_auto ( ompi_communicator_t* intercomm );
 
+/**
+ * Activate a new communicator: register it with the PML and let the collective
+ * components select a module for it.
+ *
+ * On failure *newcomm is untouched -- it is neither released nor set to
+ * MPI_COMM_NULL -- so releasing the new communicator remains the caller's
+ * job, as it is with ompi_comm_nextcid().
+ */
 OMPI_DECLSPEC int ompi_comm_activate (ompi_communicator_t **newcomm, ompi_communicator_t *comm,
                                       ompi_communicator_t *bridgecomm, const void *arg0,
                                       const void *arg1, bool send_first, int mode);
 
 /**
- * Non-blocking variant of comm_activate.
+ * Non-blocking variant of comm_activate.  Same ownership rule on failure:
+ * *newcomm stays the caller's to release.
  *
  * @param[inout] newcomm    New communicator
  * @param[in]    comm       Parent communicator
  * @param[in]    bridgecomm Bridge communicator (used for PMIX and bridge modes)
- * @param[in]    arg0       Mode argument 0
+ * @param[in]    arg0       Mode argument 0 (as for ompi_comm_nextcid, INTRA included)
  * @param[in]    arg1       Mode argument 1
  * @param[in]    send_first Send first from this process (PMIX mode only)
  * @param[in]    mode       Collective mode

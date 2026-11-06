@@ -12,11 +12,13 @@
  * Copyright (c) 2010-2018 Cisco Systems, Inc.  All rights reserved
  * Copyright (c) 2015-2019 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -27,7 +29,7 @@
 #include "opal/util/argv.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_COMM_SPAWN = ompi_comm_spawn_f
 #pragma weak pmpi_comm_spawn = ompi_comm_spawn_f
 #pragma weak pmpi_comm_spawn_ = ompi_comm_spawn_f
@@ -40,13 +42,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_COMM_SPAWN,
                             pmpi_comm_spawn,
                             pmpi_comm_spawn_,
                             pmpi_comm_spawn__,
-                            pompi_comm_spawn_f,
+                            ompi_comm_spawn_f,
                             (char *command, char *argv, MPI_Fint *maxprocs, MPI_Fint *info, MPI_Fint *root, MPI_Fint *comm, MPI_Fint *intercomm, MPI_Fint *array_of_errcodes, MPI_Fint *ierr, int cmd_len, int string_len),
                             (command, argv, maxprocs, info, root, comm, intercomm, array_of_errcodes, ierr, cmd_len, string_len) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_COMM_SPAWN = ompi_comm_spawn_f
 #pragma weak mpi_comm_spawn = ompi_comm_spawn_f
 #pragma weak mpi_comm_spawn_ = ompi_comm_spawn_f
@@ -55,17 +57,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_COMM_SPAWN,
 #pragma weak MPI_Comm_spawn_f = ompi_comm_spawn_f
 #pragma weak MPI_Comm_spawn_f08 = ompi_comm_spawn_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_COMM_SPAWN,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_COMM_SPAWN,
                             mpi_comm_spawn,
                             mpi_comm_spawn_,
                             mpi_comm_spawn__,
                             ompi_comm_spawn_f,
                             (char *command, char *argv, MPI_Fint *maxprocs, MPI_Fint *info, MPI_Fint *root, MPI_Fint *comm, MPI_Fint *intercomm, MPI_Fint *array_of_errcodes, MPI_Fint *ierr, int cmd_len, int string_len),
                             (command, argv, maxprocs, info, root, comm, intercomm, array_of_errcodes, ierr, cmd_len, string_len) )
-#else
-#define ompi_comm_spawn_f pompi_comm_spawn_f
-#endif
 #endif
 
 
@@ -91,7 +89,15 @@ void ompi_comm_spawn_f(char *command, char *argv, MPI_Fint *maxprocs,
     if (OMPI_IS_FORTRAN_ERRCODES_IGNORE(array_of_errcodes)) {
         c_errs = MPI_ERRCODES_IGNORE;
     } else {
-        OMPI_ARRAY_FINT_2_INT_ALLOC(array_of_errcodes, OMPI_FINT_2_INT(*maxprocs));
+        /* Seed the temporary from the caller's array rather than just
+           allocating it: MPI_Comm_spawn leaves the error codes untouched
+           when it fails a parameter check, and the copy back below cannot
+           tell that case apart from a failure of the spawn itself, which
+           does fill them in.  Starting from the caller's own values makes
+           the copy back a no-op in the former case, so the caller's array
+           survives unchanged the way it does when a Fortran INTEGER is
+           the same size as a C int and no temporary is used at all. */
+        OMPI_ARRAY_FINT_2_INT(array_of_errcodes, OMPI_FINT_2_INT(*maxprocs));
         c_errs = OMPI_ARRAY_NAME_CONVERT(array_of_errcodes);
     }
 

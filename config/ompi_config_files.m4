@@ -8,11 +8,13 @@
 # Copyright (c) 2018      FUJITSU LIMITED.  All rights reserved.
 # Copyright (c) 2021      Amazon.com, Inc. or its affiliates.  All Rights
 #                         reserved.
+# Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 AC_DEFUN([OMPI_CONFIG_FILES],[
@@ -26,13 +28,26 @@ AC_DEFUN([OMPI_CONFIG_FILES],[
         ompi/datatype/Makefile
         ompi/debuggers/Makefile
 
+        ompi/test/Makefile
+        ompi/test/t/Makefile
+        ompi/test/file/Makefile
+        ompi/test/part/Makefile
+        ompi/test/datatype/Makefile
+        ompi/test/general/Makefile
+        ompi/test/monitoring/Makefile
+        ompi/test/spc/Makefile
+        ompi/test/mpi-abi/Makefile
+        ompi/test/mpirun/Makefile
+        ompi/test/reexport/Makefile
+        ompi/test/bindings-generator/Makefile
+
         ompi/mpi/c/Makefile
         ompi/mpi/fortran/base/Makefile
         ompi/mpi/fortran/mpif-h/Makefile
-        ompi/mpi/fortran/mpif-h/profile/Makefile
         ompi/mpi/fortran/use-mpi/Makefile
         ompi/mpi/fortran/use-mpi/mpi-types.F90
         ompi/mpi/fortran/use-mpi-ignore-tkr/Makefile
+        ompi/mpi/fortran/use-mpi-ignore-tkr/base/Makefile
         ompi/mpi/fortran/use-mpi-ignore-tkr/mpi-ignore-tkr-interfaces.h
         ompi/mpi/fortran/use-mpi-ignore-tkr/mpi-ignore-tkr-file-interfaces.h
         ompi/mpi/fortran/use-mpi-ignore-tkr/mpi-ignore-tkr-removed-interfaces.h
@@ -50,11 +65,17 @@ AC_DEFUN([OMPI_CONFIG_FILES],[
         ompi/tools/wrappers/mpicc-wrapper-data.txt
         ompi/tools/wrappers/mpic++-wrapper-data.txt
         ompi/tools/wrappers/mpifort-wrapper-data.txt
+        ompi/tools/wrappers/mpicc_abi
+        ompi/tools/wrappers/mpicc_ompi
+        ompi/tools/wrappers/mpicxx_abi
+        ompi/tools/wrappers/mpicxx_ompi
         ompi/tools/wrappers/ompi.pc
         ompi/tools/wrappers/ompi-c.pc
         ompi/tools/wrappers/ompi-cxx.pc
+        ompi/tools/wrappers/ompi-forum-abi.pc
+        ompi/tools/wrappers/ompi-forum-abi-c.pc
+        ompi/tools/wrappers/ompi-forum-abi-cxx.pc
         ompi/tools/wrappers/ompi-fort.pc
-        ompi/tools/wrappers/mpijavac.pl
         ompi/tools/mpisync/Makefile
         ompi/tools/mpirun/Makefile
     ])

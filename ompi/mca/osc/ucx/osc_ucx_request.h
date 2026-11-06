@@ -9,6 +9,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #ifndef OMPI_OSC_UCX_REQUEST_H
@@ -86,7 +87,6 @@ OBJ_CLASS_DECLARATION(ompi_osc_ucx_accumulate_request_t);
         req = (ompi_osc_ucx_generic_request_t*) item;                                   \
         OMPI_REQUEST_INIT(&req->super.super, false);                                          \
         req->super.super.req_mpi_object.win = win;                                            \
-        req->super.super.req_complete = false;                                                \
         req->super.super.req_state = OMPI_REQUEST_ACTIVE;                                     \
         req->super.super.req_status.MPI_ERROR = MPI_SUCCESS;                                  \
         req->super.module = NULL;                                                             \
@@ -107,7 +107,6 @@ OBJ_CLASS_DECLARATION(ompi_osc_ucx_accumulate_request_t);
         req = (ompi_osc_ucx_accumulate_request_t*) item;                                \
         OMPI_REQUEST_INIT(&req->super.super, false);                                          \
         req->super.super.req_mpi_object.win = win;                                            \
-        req->super.super.req_complete = false;                                                \
         req->super.super.req_state = OMPI_REQUEST_ACTIVE;                                     \
         req->super.super.req_status.MPI_ERROR = MPI_SUCCESS;                                  \
         req->super.module = NULL;                                                             \

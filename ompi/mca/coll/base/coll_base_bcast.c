@@ -20,6 +20,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -93,7 +94,7 @@ ompi_coll_base_bcast_intra_generic( void* buffer,
         sendcount = count_by_segment;
         for( segindex = 0; segindex < num_segments; segindex++ ) {
             if( segindex == (num_segments - 1) ) {
-                sendcount = original_count - segindex * count_by_segment;
+                sendcount = original_count - (size_t) segindex * count_by_segment;
             }
             for( i = 0; i < tree->tree_nextsize; i++ ) {
                 err = MCA_PML_CALL(isend(tmpbuf, sendcount, datatype,

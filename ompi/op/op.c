@@ -19,11 +19,14 @@
  * Copyright (c) 2018      FUJITSU LIMITED.  All rights reserved.
  * Copyright (c) 2018-2025 Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -235,6 +238,8 @@ int ompi_op_init(void)
     ompi_op_ddt_map[OMPI_DATATYPE_MPI_LONG] = OMPI_OP_BASE_TYPE_LONG;
     ompi_op_ddt_map[OMPI_DATATYPE_MPI_UNSIGNED_LONG] = OMPI_OP_BASE_TYPE_UNSIGNED_LONG;
 
+    ompi_op_ddt_map[OMPI_DATATYPE_MPI_FLOAT128] = OMPI_OP_BASE_TYPE_REAL16;
+
     /* Create the intrinsic ops */
 
     if (OMPI_SUCCESS !=
@@ -398,25 +403,6 @@ error:
 }
 
 
-/*
- * See lengthy comment in mpi/cxx/intercepts.cc for how the C++ MPI::Op
- * callbacks work.
- */
-void ompi_op_set_java_callback(ompi_op_t *op, void *jnienv,
-                               void *object, int baseType)
-{
-    op->o_flags |= OMPI_OP_FLAGS_JAVA_FUNC;
-    /* The OMPI Java intercept was previously stored in
-       op->o_func.fort_fn by ompi_op_create_user().  So save that in
-       cxx.intercept_fn and put the user's fn in cxx.user_fn. */
-    op->o_func.java_data.intercept_fn =
-        (ompi_op_java_handler_fn_t *) op->o_func.fort_fn;
-    op->o_func.java_data.jnienv = jnienv;
-    op->o_func.java_data.object = object;
-    op->o_func.java_data.baseType = baseType;
-}
-
-
 /**************************************************************************
  *
  * Static functions
@@ -461,6 +447,7 @@ static void ompi_op_construct(ompi_op_t *new_op)
     new_op->op_type = OMPI_OP_NUM_OF_TYPES;
     new_op->o_flags = 0;
     new_op->o_name[0] = '\0';
+    new_op->o_datatype_converter = NULL;
 
     /* assign entry in fortran <-> c translation array */
 

@@ -4,6 +4,7 @@
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 AM_CPPFLAGS = $(pml_ubcl_CPPFLAGS)
@@ -37,7 +38,7 @@ endif
 mcacomponentdir = $(ompilibdir)
 mcacomponent_LTLIBRARIES = $(component_install)
 mca_pml_ubcl_la_SOURCES = $(ubcl_sources)
-mca_pml_ubcl_la_LIBADD = $(top_builddir)/ompi/lib@OMPI_LIBMPI_NAME@.la \
+mca_pml_ubcl_la_LIBADD = $(top_builddir)/ompi/libopen_mpi.la \
 	$(pml_ubcl_LIBS) \
 	$(OPAL_TOP_BUILDDIR)/opal/mca/common/ubcl/lib@OPAL_LIB_NAME@mca_common_ubcl.la \
 	$(OMPI_TOP_BUILDDIR)/ompi/mca/common/ubcl/libmca_common_ubcl.la

@@ -17,11 +17,13 @@
  *                         reserved.
  * Copyright (c) 2019-2020 Amazon.com, Inc. or its affiliates.  All Rights
  *                         reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 /**
  * @file
@@ -53,6 +55,13 @@
 #include "opal/util/fd.h"
 
 #define MCA_BTL_TCP_STATISTICS 0
+
+enum {
+    MCA_BTL_TCP_CONNECT_LAZY = 0,
+    MCA_BTL_TCP_CONNECT_SYNC_INIT,
+    MCA_BTL_TCP_CONNECT_FULL
+};
+
 BEGIN_C_DECLS
 
 extern opal_event_base_t *mca_btl_tcp_event_base;
@@ -132,6 +141,11 @@ struct mca_btl_tcp_component_t {
      */
     int tcp_recv_timeout;
     int tcp_handshake_timeout;
+    /**< How often, and for how long, to look again for the modex info of
+         a peer whose inbound connection arrived before it. */
+    int tcp_accept_retry_interval;
+    int tcp_accept_retry_timeout;
+    int tcp_connect_mode; /* MCA_BTL_TCP_CONNECT_* */
 
     /* free list of fragment descriptors */
     opal_free_list_t tcp_frag_eager;
@@ -151,6 +165,10 @@ struct mca_btl_tcp_component_t {
      * that are not found?
      */
     bool report_all_unfound_interfaces;
+    /**< Skip an interface that is administratively up but has no carrier.
+         Such an interface cannot honour its own address as the source of a
+         connection, which is what the peer pairs btl modules by. */
+    bool tcp_if_require_carrier;
 };
 typedef struct mca_btl_tcp_component_t mca_btl_tcp_component_t;
 
@@ -171,6 +189,12 @@ struct mca_btl_tcp_module_t {
                                            sending address for this
                                            BTL */
     uint32_t tcp_ifmask;                /**< BTL interface netmask */
+    bool tcp_shared_addr;               /**< This interface's address was also
+                                             seen on another node, so it cannot
+                                             be the source of a connection to
+                                             one.  Latched the first time a peer
+                                             advertises the address; see
+                                             mca_btl_tcp_addr_local_index() */
 
     opal_mutex_t tcp_endpoints_mutex;
     opal_list_t tcp_endpoints;
@@ -220,14 +244,14 @@ extern int mca_btl_tcp_finalize(struct mca_btl_base_module_t *btl);
  * @param nprocs (IN)     Number of processes
  * @param procs (IN)      Set of processes
  * @param peers (OUT)     Set of (optional) peer addressing info.
- * @param peers (IN/OUT)  Set of processes that are reachable via this BTL.
+ * @param status (OUT)    Per-peer MCA_BTL_PROC_* status.
  * @return     OPAL_SUCCESS or error status on failure.
  *
  */
 
 extern int mca_btl_tcp_add_procs(struct mca_btl_base_module_t *btl, size_t nprocs,
                                  struct opal_proc_t **procs, struct mca_btl_base_endpoint_t **peers,
-                                 opal_bitmap_t *reachable);
+                                 opal_bitmap_t *status);
 
 /**
  * PML->BTL notification of change in the process list.

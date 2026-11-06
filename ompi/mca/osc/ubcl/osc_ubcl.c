@@ -1,12 +1,13 @@
 /* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil -*- */
 /*
- * Copyright (c) 2025 Bull SAS.  All rights reserved.
+ * Copyright (c) 2025-2026 Bull SAS.  All rights reserved.
  *
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 /**
@@ -237,6 +238,7 @@ static int component_query(struct ompi_win_t *win, void **base, size_t size, ptr
 {
     uint64_t flags = 0;
     int dev_id;
+    ubcl_mca_state_t state;
 
     if (MPI_WIN_FLAVOR_SHARED == flavor) {
         return OPAL_ERR_NOT_IMPLEMENTED;
@@ -250,8 +252,18 @@ static int component_query(struct ompi_win_t *win, void **base, size_t size, ptr
     if (MPI_WIN_FLAVOR_ALLOCATE != flavor && MPI_WIN_FLAVOR_DYNAMIC != flavor
         && 0 < size && NULL != base && NULL != *base
         && opal_accelerator.check_addr(*base, &dev_id, &flags) > 0) {
-        mca_osc_ubcl_log(20, "GPU buffer not supported by osc/ubcl");
+        mca_osc_ubcl_warn(
+            OPAL_ERR_NOT_SUPPORTED,
+            "GPU buffer not supported by osc/ubcl: disqualifying UBCL for this window creation");
         return OPAL_ERR_NOT_SUPPORTED;
+    }
+
+    state = mca_common_ubcl_get_state();
+    if (UBCL_PML_COMM_CREATED > state) {
+        opal_output_verbose(10, mca_osc_ubcl_component.output,
+                            "osc:ubcl:%s: missing pml ubcl endpoints ; disqualifying myself",
+                            __func__);
+        return OPAL_ERR_NOT_INITIALIZED;
     }
 
     return mca_osc_ubcl_component.priority;
@@ -478,8 +490,11 @@ static int win_attach(struct ompi_win_t *win, void *base, size_t size)
     wid = (ubcl_wid_t) module->wid;
 
     /* Accelerator buffer is not supported as attached buffer */
-    if (opal_accelerator.check_addr(base, &dev_id, &flags)) {
-        mca_osc_ubcl_warn(OPAL_ERR_NOT_SUPPORTED, "GPU buffer not supported by osc/ubcl");
+    if (0 < size && NULL != base && opal_accelerator.check_addr(base, &dev_id, &flags)) {
+        mca_osc_ubcl_error(
+            OPAL_ERR_NOT_SUPPORTED,
+            "GPU buffer not supported by osc/ubcl: UBCL fail to attach %zu B starting at %p", size,
+            base);
         return OPAL_ERR_NOT_SUPPORTED;
     }
 

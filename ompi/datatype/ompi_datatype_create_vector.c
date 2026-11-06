@@ -15,11 +15,13 @@
  * Copyright (c) 2010      Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2017      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2026      Stony Brook University.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -28,7 +30,7 @@
 
 #include "ompi/datatype/ompi_datatype.h"
 
-int32_t ompi_datatype_create_vector( int count, int bLength, int stride,
+int32_t ompi_datatype_create_vector( size_t count, size_t bLength, ptrdiff_t stride,
                                      const ompi_datatype_t* oldType, ompi_datatype_t** newType )
 {
     ompi_datatype_t *pTempData, *pData;
@@ -39,7 +41,7 @@ int32_t ompi_datatype_create_vector( int count, int bLength, int stride,
     }
 
     pData = ompi_datatype_create( oldType->super.desc.used + 2 );
-    if( (bLength == stride) || (1 >= count) ) {  /* the elements are contiguous */
+    if( (bLength == (size_t)stride) || (1 >= count) ) {  /* the elements are contiguous */
         ompi_datatype_add( pData, oldType, (size_t)count * bLength, 0, extent );
     } else {
         if( 1 == bLength ) {
@@ -57,7 +59,7 @@ int32_t ompi_datatype_create_vector( int count, int bLength, int stride,
 }
 
 
-int32_t ompi_datatype_create_hvector( int count, int bLength, ptrdiff_t stride,
+int32_t ompi_datatype_create_hvector( size_t count, size_t bLength, ptrdiff_t stride,
                                       const ompi_datatype_t* oldType, ompi_datatype_t** newType )
 {
     ompi_datatype_t *pTempData, *pData;
@@ -68,7 +70,7 @@ int32_t ompi_datatype_create_hvector( int count, int bLength, ptrdiff_t stride,
     }
 
     pTempData = ompi_datatype_create( oldType->super.desc.used + 2 );
-    if( ((extent * bLength) == stride) || (1 >= count) ) {  /* contiguous */
+    if( ((extent * bLength) == (size_t)stride) || (1 >= count) ) {  /* contiguous */
         pData = pTempData;
         ompi_datatype_add( pData, oldType, count * bLength, 0, extent );
     } else {

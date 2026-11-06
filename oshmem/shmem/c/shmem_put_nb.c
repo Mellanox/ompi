@@ -6,11 +6,13 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 #include "oshmem_config.h"
 
 #include "oshmem/constants.h"
 #include "oshmem/include/shmem.h"
+#include "oshmem/include/shmemx.h"
 
 #include "oshmem/runtime/runtime.h"
 

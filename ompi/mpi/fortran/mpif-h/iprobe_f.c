@@ -18,6 +18,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -28,7 +29,7 @@
 #include "ompi/communicator/communicator.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_IPROBE = ompi_iprobe_f
 #pragma weak pmpi_iprobe = ompi_iprobe_f
 #pragma weak pmpi_iprobe_ = ompi_iprobe_f
@@ -41,13 +42,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_IPROBE,
                            pmpi_iprobe,
                            pmpi_iprobe_,
                            pmpi_iprobe__,
-                           pompi_iprobe_f,
+                           ompi_iprobe_f,
                            (MPI_Fint *source, MPI_Fint *tag, MPI_Fint *comm, ompi_fortran_logical_t *flag, MPI_Fint *status, MPI_Fint *ierr),
                            (source, tag, comm, flag, status, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_IPROBE = ompi_iprobe_f
 #pragma weak mpi_iprobe = ompi_iprobe_f
 #pragma weak mpi_iprobe_ = ompi_iprobe_f
@@ -56,17 +57,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_IPROBE,
 #pragma weak MPI_Iprobe_f = ompi_iprobe_f
 #pragma weak MPI_Iprobe_f08 = ompi_iprobe_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_IPROBE,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_IPROBE,
                            mpi_iprobe,
                            mpi_iprobe_,
                            mpi_iprobe__,
                            ompi_iprobe_f,
                            (MPI_Fint *source, MPI_Fint *tag, MPI_Fint *comm, ompi_fortran_logical_t *flag, MPI_Fint *status, MPI_Fint *ierr),
                            (source, tag, comm, flag, status, ierr) )
-#else
-#define ompi_iprobe_f pompi_iprobe_f
-#endif
 #endif
 
 

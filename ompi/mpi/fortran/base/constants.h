@@ -14,11 +14,13 @@
  * Copyright (c) 2011-2012 Universite Bordeaux 1
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #ifndef OMPI_FORTRAN_BASE_CONSTANTS_H
@@ -56,7 +58,7 @@
  *
  * Since we made the fundamental decision to support all 4 common
  * fortran compiler symbol conventions within the same library for
- * those compilers who support weak symbols, we need to have 4 symbols
+ * those compilers who support weak aliases, we need to have 4 symbols
  * for each of the fortran address constants.  As described above, we
  * have to have known *pointer* values for the fortran addresses
  * (e.g., MPI_STATUS_IGNORE).  So when the fortran wrapper for
@@ -83,7 +85,7 @@
  *
  * I'm putting these 4 comparisons in macros (on systems where we
  * don't support the 4 symbols -- e.g., OSX, where we don't have weak
- * symbols -- it'll only be one comparison), so if anyone things of
+ * aliases -- it'll only be one comparison), so if anyone things of
  * something better than this, you should only need to modify this
  * file.
  */
@@ -96,6 +98,26 @@
 #define OMPI_F2C_UNWEIGHTED(addr)  (OMPI_IS_FORTRAN_UNWEIGHTED(addr) ? MPI_UNWEIGHTED : (addr))
 #define OMPI_F2C_WEIGHTS_EMPTY(addr)  (OMPI_IS_FORTRAN_WEIGHTS_EMPTY(addr) ? MPI_WEIGHTS_EMPTY : (addr))
 #define OMPI_F2C_BUFFER_AUTOMATIC(addr) (OMPI_IS_FORTRAN_BUFFER_AUTOMATIC(addr) ? MPI_BUFFER_AUTOMATIC : (addr))
+
+/* Did a multiple-completion call leave its output arguments usable?
+ *
+ * MPI-4.1 sec. 3.7.5: a call that reports MPI_ERR_IN_STATUS has
+ * completed every operation -- some successfully, some not -- and
+ * reports the individual failures only through the statuses.  Its
+ * outcount, indices and statuses are therefore all valid, and a Fortran
+ * binding that skips converting them back leaves the caller with no way
+ * to discover which request failed.  Any other error code does leave
+ * the output arguments undefined.
+ *
+ * Only MPI_WAITALL, MPI_WAITSOME, MPI_TESTALL and MPI_TESTSOME can
+ * report MPI_ERR_IN_STATUS: they are the ones handing back an array of
+ * statuses to carry the per-request errors.  The single-status calls
+ * (MPI_WAIT, MPI_TEST, MPI_WAITANY, MPI_TESTANY) return the failing
+ * request's own error class directly, so they must keep testing for
+ * MPI_SUCCESS alone.
+ */
+#define OMPI_FORTRAN_COMPLETION_OUTPUTS_VALID(c_ierr) \
+    (MPI_SUCCESS == (c_ierr) || MPI_ERR_IN_STATUS == (c_ierr))
 
 #endif /* OMPI_BUILD_FORTRAN_BINDINGS */
 

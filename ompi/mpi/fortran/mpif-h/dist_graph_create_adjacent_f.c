@@ -10,11 +10,13 @@
  *                         reserved.
  * Copyright (c) 2015-2019 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -23,7 +25,7 @@
 #include "ompi/mpi/fortran/base/constants.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_DIST_GRAPH_CREATE_ADJACENT = ompi_dist_graph_create_adjacent_f
 #pragma weak pmpi_dist_graph_create_adjacent = ompi_dist_graph_create_adjacent_f
 #pragma weak pmpi_dist_graph_create_adjacent_ = ompi_dist_graph_create_adjacent_f
@@ -36,13 +38,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_DIST_GRAPH_CREATE_ADJACENT,
                             pmpi_dist_graph_create_adjacent,
                             pmpi_dist_graph_create_adjacent_,
                             pmpi_dist_graph_create_adjacent__,
-                            pompi_dist_graph_create_adjacent_f,
+                            ompi_dist_graph_create_adjacent_f,
                             (MPI_Fint *comm_old, MPI_Fint *indegree,  MPI_Fint *sources, MPI_Fint *sourceweights, MPI_Fint *outdegree,  MPI_Fint *destinations, MPI_Fint *destweights, MPI_Fint *info, ompi_fortran_logical_t *reorder, MPI_Fint *comm_graph, MPI_Fint *ierr),
                             (comm_old, indegree, sources, sourceweights, outdegree, destinations, destweights, info, reorder, comm_graph, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_DIST_GRAPH_CREATE_ADJACENT = ompi_dist_graph_create_adjacent_f
 #pragma weak mpi_dist_graph_create_adjacent = ompi_dist_graph_create_adjacent_f
 #pragma weak mpi_dist_graph_create_adjacent_ = ompi_dist_graph_create_adjacent_f
@@ -51,19 +53,14 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_DIST_GRAPH_CREATE_ADJACENT,
 #pragma weak MPI_Dist_graph_create_adjacent_f = ompi_dist_graph_create_adjacent_f
 #pragma weak MPI_Dist_graph_create_adjacent_f08 = ompi_dist_graph_create_adjacent_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_DIST_GRAPH_CREATE_ADJACENT,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_DIST_GRAPH_CREATE_ADJACENT,
                             mpi_dist_graph_create_adjacent,
                             mpi_dist_graph_create_adjacent_,
                             mpi_dist_graph_create_adjacent__,
                             ompi_dist_graph_create_adjacent_f,
                             (MPI_Fint *comm_old, MPI_Fint *indegree,  MPI_Fint *sources, MPI_Fint *sourceweights, MPI_Fint *outdegree,  MPI_Fint *destinations, MPI_Fint *destweights, MPI_Fint *info, ompi_fortran_logical_t *reorder, MPI_Fint *comm_graph, MPI_Fint *ierr),
                             (comm_old, indegree,  sources, sourceweights, outdegree, destinations, destweights, info, reorder, comm_graph, ierr) )
-#endif
 
-#if OMPI_BUILD_MPI_PROFILING && ! OPAL_HAVE_WEAK_SYMBOLS
-#define ompi_dist_graph_create_adjacent_f pompi_dist_graph_create_adjacent_f
-#endif
 #endif
 
 
@@ -102,7 +99,7 @@ void ompi_dist_graph_create_adjacent_f(MPI_Fint *comm_old, MPI_Fint *indegree,
     } else if (OMPI_IS_FORTRAN_WEIGHTS_EMPTY(destweights)) {
         c_destweights = MPI_WEIGHTS_EMPTY;
     } else {
-        OMPI_ARRAY_FINT_2_INT(destweights, *indegree);
+        OMPI_ARRAY_FINT_2_INT(destweights, *outdegree);
         c_destweights = OMPI_ARRAY_NAME_CONVERT(destweights);
     }
 

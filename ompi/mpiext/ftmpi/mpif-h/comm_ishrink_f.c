@@ -7,6 +7,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 #include "ompi_config.h"
 
@@ -20,7 +21,7 @@
 #include "ompi/request/request.h"
 #include "ompi/mpi/fortran/base/fint_2_int.h"
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPIX_COMM_ISHRINK = ompix_comm_ishrink_f
 #pragma weak pmpix_comm_ishrink = ompix_comm_ishrink_f
 #pragma weak pmpix_comm_ishrink_ = ompix_comm_ishrink_f
@@ -35,7 +36,7 @@
 #pragma weak MPIX_Comm_ishrink_f = ompix_comm_ishrink_f
 #pragma weak MPIX_Comm_ishrink_f08 = ompix_comm_ishrink_f
 
-#else /* No weak symbols */
+#else /* No weak aliases */
 OMPI_GENERATE_F77_BINDINGS(PMPIX_COMM_ISHRINK,
                         pmpix_comm_ishrink,
                         pmpix_comm_ishrink_,

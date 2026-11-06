@@ -7,6 +7,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "opal_config.h"
@@ -756,7 +757,7 @@ static int min_cost_flow_ssp(opal_bp_graph_t *gx, int **flow_out)
     }
 
     /* "flow" is a 2d matrix of current flow values, all initialized to zero */
-    flow = calloc(n * n, sizeof(*flow));
+    flow = calloc((size_t)n * n, sizeof(*flow));
     if (NULL == flow) {
         OPAL_ERROR_LOG(OPAL_ERR_OUT_OF_RESOURCE);
         err = OPAL_ERR_OUT_OF_RESOURCE;

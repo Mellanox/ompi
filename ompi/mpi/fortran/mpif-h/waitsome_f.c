@@ -12,11 +12,13 @@
  * Copyright (c) 2006-2012 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -27,7 +29,7 @@
 #include "ompi/communicator/communicator.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_WAITSOME = ompi_waitsome_f
 #pragma weak pmpi_waitsome = ompi_waitsome_f
 #pragma weak pmpi_waitsome_ = ompi_waitsome_f
@@ -40,13 +42,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_WAITSOME,
                            pmpi_waitsome,
                            pmpi_waitsome_,
                            pmpi_waitsome__,
-                           pompi_waitsome_f,
+                           ompi_waitsome_f,
                            (MPI_Fint *incount, MPI_Fint *array_of_requests, MPI_Fint *outcount, MPI_Fint *array_of_indices, MPI_Fint *array_of_statuses, MPI_Fint *ierr),
                            (incount, array_of_requests, outcount, array_of_indices, array_of_statuses, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_WAITSOME = ompi_waitsome_f
 #pragma weak mpi_waitsome = ompi_waitsome_f
 #pragma weak mpi_waitsome_ = ompi_waitsome_f
@@ -55,17 +57,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_WAITSOME,
 #pragma weak MPI_Waitsome_f = ompi_waitsome_f
 #pragma weak MPI_Waitsome_f08 = ompi_waitsome_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_WAITSOME,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_WAITSOME,
                            mpi_waitsome,
                            mpi_waitsome_,
                            mpi_waitsome__,
                            ompi_waitsome_f,
                            (MPI_Fint *incount, MPI_Fint *array_of_requests, MPI_Fint *outcount, MPI_Fint *array_of_indices, MPI_Fint *array_of_statuses, MPI_Fint *ierr),
                            (incount, array_of_requests, outcount, array_of_indices, array_of_statuses, ierr) )
-#else
-#define ompi_waitsome_f pompi_waitsome_f
-#endif
 #endif
 
 
@@ -113,26 +111,29 @@ void ompi_waitsome_f(MPI_Fint *incount, MPI_Fint *array_of_requests,
                           c_status);
     if (NULL != ierr) *ierr = OMPI_INT_2_FINT(c_ierr);
 
-    if (MPI_SUCCESS == c_ierr) {
+    if (OMPI_FORTRAN_COMPLETION_OUTPUTS_VALID(c_ierr)) {
         OMPI_SINGLE_INT_2_FINT(outcount);
-        OMPI_ARRAY_INT_2_FINT(array_of_indices, *incount);
-
-        /* Increment indexes by one for fortran conventions */
-
         if (MPI_UNDEFINED != OMPI_FINT_2_INT(*outcount)) {
+            OMPI_ARRAY_INT_2_FINT(array_of_indices, *outcount);
+
+            /* Increment indexes by one for fortran conventions */
             for (i = 0; i < OMPI_FINT_2_INT(*outcount); ++i) {
                 array_of_requests[OMPI_INT_2_FINT(array_of_indices[i])] =
                     c_req[OMPI_INT_2_FINT(array_of_indices[i])]->req_f_to_c_index;
                 ++array_of_indices[i];
             }
-        }
-        if (!OMPI_IS_FORTRAN_STATUSES_IGNORE(array_of_statuses)) {
-            for (i = 0; i < OMPI_FINT_2_INT(*incount); ++i) {
-                if (!OMPI_IS_FORTRAN_STATUS_IGNORE(&array_of_statuses[i])) {
-                    PMPI_Status_c2f(&c_status[i], &array_of_statuses[i * (sizeof(MPI_Status) / sizeof(int))]);
+            if (!OMPI_IS_FORTRAN_STATUSES_IGNORE(array_of_statuses)) {
+                for (i = 0; i < OMPI_FINT_2_INT(*outcount); ++i) {
+                    if (!OMPI_IS_FORTRAN_STATUS_IGNORE(&array_of_statuses[i])) {
+                        PMPI_Status_c2f(&c_status[i], &array_of_statuses[i * (sizeof(MPI_Status) / sizeof(int))]);
+                    }
                 }
             }
+        } else {
+            OMPI_ARRAY_FINT_2_INT_CLEANUP(array_of_indices);
         }
+    } else {
+        OMPI_ARRAY_FINT_2_INT_CLEANUP(array_of_indices);
     }
     free(c_req);
 }

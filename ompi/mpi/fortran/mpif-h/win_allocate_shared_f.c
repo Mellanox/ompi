@@ -12,11 +12,13 @@
  * Copyright (c) 2011-2014 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -24,7 +26,7 @@
 #include "ompi/mpi/fortran/mpif-h/bindings.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_WIN_ALLOCATE_SHARED = ompi_win_allocate_shared_f
 #pragma weak pmpi_win_allocate_shared = ompi_win_allocate_shared_f
 #pragma weak pmpi_win_allocate_shared_ = ompi_win_allocate_shared_f
@@ -45,7 +47,7 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_WIN_ALLOCATE_SHARED,
                             pmpi_win_allocate_shared,
                             pmpi_win_allocate_shared_,
                             pmpi_win_allocate_shared__,
-                            pompi_win_allocate_shared_f,
+                            ompi_win_allocate_shared_f,
                             (MPI_Aint *size, MPI_Fint *disp_unit,
                              MPI_Fint *info, MPI_Fint *comm, char *baseptr,
                              MPI_Fint *win, MPI_Fint *ierr),
@@ -55,7 +57,7 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_WIN_ALLOCATE_SHARED_CPTR,
                             pmpi_win_allocate_shared_cptr,
                             pmpi_win_allocate_shared_cptr_,
                             pmpi_win_allocate_shared_cptr__,
-                            pompi_win_allocate_shared_cptr_f,
+                            ompi_win_allocate_shared_cptr_f,
                             (MPI_Aint *size, MPI_Fint *disp_unit,
                              MPI_Fint *info, MPI_Fint *comm, char *baseptr,
                              MPI_Fint *win, MPI_Fint *ierr),
@@ -63,7 +65,7 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_WIN_ALLOCATE_SHARED_CPTR,
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_WIN_ALLOCATE_SHARED = ompi_win_allocate_shared_f
 #pragma weak mpi_win_allocate_shared = ompi_win_allocate_shared_f
 #pragma weak mpi_win_allocate_shared_ = ompi_win_allocate_shared_f
@@ -80,8 +82,7 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_WIN_ALLOCATE_SHARED_CPTR,
 #pragma weak MPI_Win_allocate_shared_cptr_f = ompi_win_allocate_shared_f
 #pragma weak MPI_Win_allocate_shared_cptr_f08 = ompi_win_allocate_shared_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_WIN_ALLOCATE_SHARED,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_WIN_ALLOCATE_SHARED,
                             mpi_win_allocate_shared,
                             mpi_win_allocate_shared_,
                             mpi_win_allocate_shared__,
@@ -91,7 +92,7 @@ OMPI_GENERATE_F77_BINDINGS (MPI_WIN_ALLOCATE_SHARED,
                              MPI_Fint *win, MPI_Fint *ierr),
                             (size, disp_unit, info, comm, baseptr, win, ierr) )
 
-OMPI_GENERATE_F77_BINDINGS (MPI_WIN_ALLOCATE_SHARED_CPTR,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_WIN_ALLOCATE_SHARED_CPTR,
                             mpi_win_allocate_shared_cptr,
                             mpi_win_allocate_shared_cptr_,
                             mpi_win_allocate_shared_cptr__,
@@ -100,10 +101,6 @@ OMPI_GENERATE_F77_BINDINGS (MPI_WIN_ALLOCATE_SHARED_CPTR,
                              MPI_Fint *info, MPI_Fint *comm, char *baseptr,
                              MPI_Fint *win, MPI_Fint *ierr),
                             (size, disp_unit, info, comm, baseptr, win, ierr) )
-#else
-#define ompi_win_allocate_shared_f pompi_win_allocate_shared_f
-#define ompi_win_allocate_shared_cptr_f pompi_win_allocate_shared_cptr_f
-#endif
 #endif
 
 
@@ -122,8 +119,11 @@ void ompi_win_allocate_shared_f(MPI_Aint *size, MPI_Fint *disp_unit,
     c_ierr = PMPI_Win_allocate_shared(*size, OMPI_FINT_2_INT(*disp_unit),
                                      c_info, c_comm,
                                      baseptr, &c_win);
-    *win = PMPI_Win_c2f(c_win);
     if (NULL != ierr) *ierr = OMPI_INT_2_FINT(c_ierr);
+
+    if (MPI_SUCCESS == c_ierr) {
+        *win = PMPI_Win_c2f(c_win);
+    }
 }
 
 /*

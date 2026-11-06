@@ -17,6 +17,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -24,7 +25,7 @@
 #include "ompi/mpi/fortran/mpif-h/bindings.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_WIN_DELETE_ATTR = ompi_win_delete_attr_f
 #pragma weak pmpi_win_delete_attr = ompi_win_delete_attr_f
 #pragma weak pmpi_win_delete_attr_ = ompi_win_delete_attr_f
@@ -37,13 +38,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_WIN_DELETE_ATTR,
                            pmpi_win_delete_attr,
                            pmpi_win_delete_attr_,
                            pmpi_win_delete_attr__,
-                           pompi_win_delete_attr_f,
+                           ompi_win_delete_attr_f,
                            (MPI_Fint *win, MPI_Fint *win_keyval, MPI_Fint *ierr),
                            (win, win_keyval, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_WIN_DELETE_ATTR = ompi_win_delete_attr_f
 #pragma weak mpi_win_delete_attr = ompi_win_delete_attr_f
 #pragma weak mpi_win_delete_attr_ = ompi_win_delete_attr_f
@@ -52,17 +53,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_WIN_DELETE_ATTR,
 #pragma weak MPI_Win_delete_attr_f = ompi_win_delete_attr_f
 #pragma weak MPI_Win_delete_attr_f08 = ompi_win_delete_attr_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_WIN_DELETE_ATTR,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_WIN_DELETE_ATTR,
                            mpi_win_delete_attr,
                            mpi_win_delete_attr_,
                            mpi_win_delete_attr__,
                            ompi_win_delete_attr_f,
                            (MPI_Fint *win, MPI_Fint *win_keyval, MPI_Fint *ierr),
                            (win, win_keyval, ierr) )
-#else
-#define ompi_win_delete_attr_f pompi_win_delete_attr_f
-#endif
 #endif
 
 

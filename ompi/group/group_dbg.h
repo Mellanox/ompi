@@ -6,6 +6,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #ifndef OMPI_GROUP_DBG_H
@@ -25,5 +26,8 @@
 #define OMPI_GROUP_SPORADIC  0x00000008
 #define OMPI_GROUP_STRIDED   0x00000010
 #define OMPI_GROUP_BITMAP    0x00000020
+
+#define OMPI_GROUP_LOCAL     0x00000100
+#define OMPI_GROUP_NON_LOCAL 0x00000200
 
 #endif /* OMPI_GROUP_DBG_H */

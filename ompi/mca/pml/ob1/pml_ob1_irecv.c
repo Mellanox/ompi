@@ -18,11 +18,13 @@
  * Copyright (c) 2014      Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2016-2017 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -63,6 +65,9 @@ int mca_pml_ob1_irecv_init(void *addr,
     PERUSE_TRACE_COMM_EVENT (PERUSE_COMM_REQ_ACTIVATE,
                              &((recvreq)->req_recv.req_base),
                              PERUSE_RECV);
+    /* MPI_Recv_init() only creates an inactive persistent request; the
+     * MPI_T request-activate event is raised from mca_pml_ob1_start() when
+     * the request is actually started. */
 
     /* Work around a leak in start by marking this request as complete. The
      * problem occurred because we do not have a way to differentiate an
@@ -95,6 +100,9 @@ int mca_pml_ob1_irecv(void *addr,
     PERUSE_TRACE_COMM_EVENT (PERUSE_COMM_REQ_ACTIVATE,
                              &((recvreq)->req_recv.req_base),
                              PERUSE_RECV);
+    mca_pml_ob1_event_raise_request (MCA_PML_OB1_EVENT_REQUEST_ACTIVATE,
+                                     recvreq->req_recv.req_base.req_comm,
+                                     &recvreq->req_recv.req_base);
 
     MCA_PML_OB1_RECV_REQUEST_START(recvreq);
     *request = (ompi_request_t *) recvreq;
@@ -131,6 +139,9 @@ int mca_pml_ob1_recv(void *addr,
     PERUSE_TRACE_COMM_EVENT (PERUSE_COMM_REQ_ACTIVATE,
                              &(recvreq->req_recv.req_base),
                              PERUSE_RECV);
+    mca_pml_ob1_event_raise_request (MCA_PML_OB1_EVENT_REQUEST_ACTIVATE,
+                                     recvreq->req_recv.req_base.req_comm,
+                                     &recvreq->req_recv.req_base);
 
     MCA_PML_OB1_RECV_REQUEST_START(recvreq);
     ompi_request_wait_completion(&recvreq->req_recv.req_base.req_ompi);
@@ -224,6 +235,9 @@ mca_pml_ob1_imrecv( void *buf,
     PERUSE_TRACE_COMM_EVENT (PERUSE_COMM_REQ_ACTIVATE,
                              &((recvreq)->req_recv.req_base),
                              PERUSE_RECV);
+    mca_pml_ob1_event_raise_request (MCA_PML_OB1_EVENT_REQUEST_ACTIVATE,
+                                     recvreq->req_recv.req_base.req_comm,
+                                     &recvreq->req_recv.req_base);
 
     /* init/re-init the request */
     recvreq->req_lock = 0;
@@ -233,6 +247,9 @@ mca_pml_ob1_imrecv( void *buf,
     recvreq->req_rdma_idx = 0;
     recvreq->req_pending = false;
     recvreq->req_ack_sent = false;
+    recvreq->req_match_received = false;
+    /* release: pair with rmb in recv_request_pml_complete_check */
+    opal_atomic_wmb();
 
     MCA_PML_BASE_RECV_START(&recvreq->req_recv);
 
@@ -317,6 +334,9 @@ mca_pml_ob1_mrecv( void *buf,
     PERUSE_TRACE_COMM_EVENT (PERUSE_COMM_REQ_ACTIVATE,
                              &((recvreq)->req_recv.req_base),
                              PERUSE_RECV);
+    mca_pml_ob1_event_raise_request (MCA_PML_OB1_EVENT_REQUEST_ACTIVATE,
+                                     recvreq->req_recv.req_base.req_comm,
+                                     &recvreq->req_recv.req_base);
 
     /* init/re-init the request */
     recvreq->req_lock = 0;
@@ -325,6 +345,10 @@ mca_pml_ob1_mrecv( void *buf,
     recvreq->req_rdma_cnt = 0;
     recvreq->req_rdma_idx = 0;
     recvreq->req_pending = false;
+    recvreq->req_ack_sent = false;
+    recvreq->req_match_received = false;
+    /* release: pair with rmb in recv_request_pml_complete_check */
+    opal_atomic_wmb();
 
     MCA_PML_BASE_RECV_START(&recvreq->req_recv);
 

@@ -14,11 +14,13 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2016      Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2016-2017 IBM Corporation. All rights reserved.
+ * Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -99,6 +101,56 @@ int mca_io_ompio_file_close (ompi_file_t *fh)
     if ( NULL != data ) {
       free ( data );
     }
+
+    return ret;
+}
+
+int mca_io_ompio_file_set_info (ompi_file_t *fh,
+                               ompi_info_t *info)
+{
+    int ret;
+    mca_common_ompio_data_t *data;
+    mca_common_ompio_info_phase_t previous_phase;
+
+    if (NULL == fh || NULL == info) {
+        return OMPI_ERR_BAD_PARAM;
+    }
+
+    data = (mca_common_ompio_data_t *) fh->f_io_selected_data;
+    if (NULL == data) {
+        return OMPI_ERR_BAD_PARAM;
+    }
+
+    OPAL_THREAD_LOCK(&fh->f_lock);
+    previous_phase = data->ompio_fh.f_info_phase;
+    data->ompio_fh.f_info_phase = MCA_COMMON_OMPIO_INFO_PHASE_SET_INFO;
+
+    ret = mca_common_ompio_info_apply(&data->ompio_fh, &info->super);
+
+    data->ompio_fh.f_info_phase = previous_phase;
+    OPAL_THREAD_UNLOCK(&fh->f_lock);
+
+    return ret;
+}
+
+int mca_io_ompio_file_get_info (ompi_file_t *fh,
+                               ompi_info_t **info_used)
+{
+    int ret;
+    mca_common_ompio_data_t *data;
+
+    if (NULL == fh || NULL == info_used) {
+        return OMPI_ERR_BAD_PARAM;
+    }
+
+    data = (mca_common_ompio_data_t *) fh->f_io_selected_data;
+    if (NULL == data) {
+        return OMPI_ERR_BAD_PARAM;
+    }
+
+    OPAL_THREAD_LOCK(&fh->f_lock);
+    ret = mca_common_ompio_info_dup(&data->ompio_fh, info_used);
+    OPAL_THREAD_UNLOCK(&fh->f_lock);
 
     return ret;
 }
@@ -517,8 +569,9 @@ int mca_io_ompio_file_get_byte_offset (ompi_file_t *fh,
                                        OMPI_MPI_OFFSET_TYPE *disp)
 {
     mca_common_ompio_data_t *data;
-    int i, k, index;
-    long temp_offset;
+    size_t i, k;
+    uint32_t index;
+    OMPI_MPI_OFFSET_TYPE temp_offset;
 
     data = (mca_common_ompio_data_t *) fh->f_io_selected_data;
 
@@ -528,18 +581,18 @@ int mca_io_ompio_file_get_byte_offset (ompi_file_t *fh,
         OPAL_THREAD_UNLOCK(&fh->f_lock);
         return OMPI_SUCCESS;
     }
-    temp_offset = (long) data->ompio_fh.f_fview.f_view_extent *
-        (offset*data->ompio_fh.f_fview.f_etype_size / data->ompio_fh.f_fview.f_view_size);
+    temp_offset = (OMPI_MPI_OFFSET_TYPE) data->ompio_fh.f_fview.f_view_extent *
+        (OMPI_MPI_OFFSET_TYPE)(offset*data->ompio_fh.f_fview.f_etype_size / data->ompio_fh.f_fview.f_view_size);
     if ( 0 > temp_offset ) {
         OPAL_THREAD_UNLOCK(&fh->f_lock);
         return MPI_ERR_ARG;
     }
     
-    i = (offset*data->ompio_fh.f_fview.f_etype_size) % data->ompio_fh.f_fview.f_view_size;
+    i = (size_t)(offset*data->ompio_fh.f_fview.f_etype_size) % data->ompio_fh.f_fview.f_view_size;
     index = 0;
     k = 0;
 
-    while (1) {
+    while (index < data->ompio_fh.f_fview.f_iov_count) {
         k = data->ompio_fh.f_fview.f_decoded_iov[index].iov_len;
         if (i >= k) {
             i -= k;
@@ -554,9 +607,15 @@ int mca_io_ompio_file_get_byte_offset (ompi_file_t *fh,
             break;
         }
     }
+    if (index >= data->ompio_fh.f_fview.f_iov_count) {
+        /* should not happen, since i < f_view_size */
+        OPAL_THREAD_UNLOCK(&fh->f_lock);
+        return MPI_ERR_ARG;
+    }
 
     *disp = data->ompio_fh.f_fview.f_disp + temp_offset +
-        (OMPI_MPI_OFFSET_TYPE)(intptr_t)data->ompio_fh.f_fview.f_decoded_iov[index].iov_base + k;
+        (OMPI_MPI_OFFSET_TYPE)(intptr_t)data->ompio_fh.f_fview.f_decoded_iov[index].iov_base +
+        (OMPI_MPI_OFFSET_TYPE)k;
     OPAL_THREAD_UNLOCK(&fh->f_lock);
 
     return OMPI_SUCCESS;
@@ -613,4 +672,3 @@ int mca_io_ompio_file_get_position_shared (ompi_file_t *fp,
 
     return ret;
 }
-

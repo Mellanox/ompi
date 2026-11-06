@@ -12,11 +12,13 @@
  * Copyright (c) 2011-2012 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -27,7 +29,7 @@
 #include "ompi/communicator/communicator.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_WAITALL = ompi_waitall_f
 #pragma weak pmpi_waitall = ompi_waitall_f
 #pragma weak pmpi_waitall_ = ompi_waitall_f
@@ -40,13 +42,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_WAITALL,
                            pmpi_waitall,
                            pmpi_waitall_,
                            pmpi_waitall__,
-                           pompi_waitall_f,
+                           ompi_waitall_f,
                            (MPI_Fint *count, MPI_Fint *array_of_requests, MPI_Fint *array_of_statuses, MPI_Fint *ierr),
                            (count, array_of_requests, array_of_statuses, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_WAITALL = ompi_waitall_f
 #pragma weak mpi_waitall = ompi_waitall_f
 #pragma weak mpi_waitall_ = ompi_waitall_f
@@ -55,17 +57,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_WAITALL,
 #pragma weak MPI_Waitall_f = ompi_waitall_f
 #pragma weak MPI_Waitall_f08 = ompi_waitall_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_WAITALL,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_WAITALL,
                            mpi_waitall,
                            mpi_waitall_,
                            mpi_waitall__,
                            ompi_waitall_f,
                            (MPI_Fint *count, MPI_Fint *array_of_requests, MPI_Fint *array_of_statuses, MPI_Fint *ierr),
                            (count, array_of_requests, array_of_statuses, ierr) )
-#else
-#define ompi_waitall_f pompi_waitall_f
-#endif
 #endif
 
 
@@ -104,7 +102,7 @@ void ompi_waitall_f(MPI_Fint *count, MPI_Fint *array_of_requests,
     c_ierr = PMPI_Waitall(OMPI_FINT_2_INT(*count), c_req, c_status);
     if (NULL != ierr) *ierr = OMPI_INT_2_FINT(c_ierr);
 
-    if (MPI_SUCCESS == c_ierr) {
+    if (OMPI_FORTRAN_COMPLETION_OUTPUTS_VALID(c_ierr)) {
         for (i = 0; i < OMPI_FINT_2_INT(*count); ++i) {
             array_of_requests[i] = c_req[i]->req_f_to_c_index;
             if (!OMPI_IS_FORTRAN_STATUSES_IGNORE(array_of_statuses) &&

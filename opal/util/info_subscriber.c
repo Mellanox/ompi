@@ -18,11 +18,13 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2016-2018 IBM Corporation. All rights reserved.
  * Copyright (c) 2017-2018 Intel, Inc. All rights reserved.
+ * Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include <errno.h>
@@ -76,6 +78,14 @@ static void infosubscriber_construct(opal_infosubscriber_t *obj)
 {
     OBJ_CONSTRUCT(&obj->s_subscriber_table, opal_hash_table_t);
     opal_hash_table_init(&obj->s_subscriber_table, 10);
+
+    /* s_info is created lazily (see opal_infosubscribe_subscribe) and is
+     * released in the destructor only when non-NULL, so it must start out
+     * NULL.  Subclasses (communicator, win, file) run after this base
+     * constructor; a standalone OBJ_NEW(opal_infosubscriber_t) has no
+     * subclass constructor, so without this it would be left uninitialized
+     * and dereferenced as a garbage pointer. */
+    obj->s_info = NULL;
 }
 
 static void infosubscriber_destruct(opal_infosubscriber_t *obj)

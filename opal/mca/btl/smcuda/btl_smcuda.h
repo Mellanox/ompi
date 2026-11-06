@@ -14,13 +14,14 @@
  * Copyright (c) 2009-2010 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2010-2015 Los Alamos National Security, LLC.
  *                         All rights reserved.
- * Copyright (c) 2012-2023 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2012-2026 NVIDIA Corporation.  All rights reserved.
  * Copyright (c) 2024      Advanced Micro Devices, Inc. All Rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 /**
  * @file
@@ -200,6 +201,8 @@ struct mca_btl_smcuda_component_t {
     char *sm_ctl_file_name;
     char *sm_rndv_file_name;
 
+    int smcuda_enable;
+
     int cuda_ipc_verbose;
     int cuda_ipc_output;
     int use_cuda_ipc;
@@ -377,7 +380,7 @@ extern int mca_btl_smcuda_finalize(struct mca_btl_base_module_t *btl);
 extern int mca_btl_smcuda_add_procs(struct mca_btl_base_module_t *btl, size_t nprocs,
                                     struct opal_proc_t **procs,
                                     struct mca_btl_base_endpoint_t **peers,
-                                    struct opal_bitmap_t *reachability);
+                                    struct opal_bitmap_t *status);
 
 /**
  * PML->BTL notification of change in the process list.

@@ -2,11 +2,13 @@
  * Copyright (c) 2010-2019 The University of Tennessee and the University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 #include "ompi_config.h"
 
@@ -15,7 +17,7 @@
 #include "ompi/mpiext/ftmpi/c/mpiext_ftmpi_c.h"
 #include "ompi/mpiext/ftmpi/mpif-h/prototypes_mpi.h"
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPIX_COMM_IAGREE = ompix_comm_iagree_f
 #pragma weak pmpix_comm_iagree = ompix_comm_iagree_f
 #pragma weak pmpix_comm_iagree_ = ompix_comm_iagree_f
@@ -30,13 +32,13 @@
 #pragma weak MPIX_Comm_iagree_f = ompix_comm_iagree_f
 #pragma weak MPIX_Comm_iagree_f08 = ompix_comm_iagree_f
 
-#else /* No weak symbols */
+#else /* No weak aliases */
 OMPI_GENERATE_F77_BINDINGS(MPIX_COMM_IAGREE,
                         mpix_comm_iagree,
                         mpix_comm_iagree_,
                         mpix_comm_iagree__,
                         ompix_comm_iagree_f,
-                        (MPI_Fint *comm, ompi_fortran_logical_t *flag, MPI_Fint *request, MPI_Fint *ierr),
+                        (MPI_Fint *comm, MPI_Fint *flag, MPI_Fint *request, MPI_Fint *ierr),
                         (comm, flag, request, ierr))
 
 OMPI_GENERATE_F77_BINDINGS(PMPIX_COMM_IAGREE,
@@ -44,18 +46,27 @@ OMPI_GENERATE_F77_BINDINGS(PMPIX_COMM_IAGREE,
                         pmpix_comm_iagree_,
                         pmpix_comm_iagree__,
                         ompix_comm_iagree_f,
-                        (MPI_Fint *comm, ompi_fortran_logical_t *flag, MPI_Fint *request, MPI_Fint *ierr),
+                        (MPI_Fint *comm, MPI_Fint *flag, MPI_Fint *request, MPI_Fint *ierr),
                         (comm, flag, request, ierr))
 #endif
 
-void ompix_comm_iagree_f(MPI_Fint *comm, ompi_fortran_logical_t *flag, MPI_Fint *request, MPI_Fint *ierr)
+void ompix_comm_iagree_f(MPI_Fint *comm, MPI_Fint *flag, MPI_Fint *request, MPI_Fint *ierr)
 {
     MPI_Comm c_comm = PMPI_Comm_f2c(*comm);
     MPI_Request c_req;
-    OMPI_LOGICAL_NAME_DECL(flag);
+    OMPI_SINGLE_NAME_DECL(flag);
+
+    /* flag is INOUT: the integer the caller contributes to the bitwise AND,
+     * and on completion the reduced result.  The agreement writes that
+     * result when the request completes, long after we have returned, so
+     * the result only reaches the caller when a Fortran INTEGER is a C int
+     * and the caller's own variable is what we hand to the agreement.
+     * Where a conversion is required this binding has no way to perform it
+     * at completion time. */
+    OMPI_SINGLE_FINT_2_INT(flag);
 
     *ierr = OMPI_INT_2_FINT(PMPIX_Comm_iagree(c_comm,
-                                              OMPI_LOGICAL_SINGLE_NAME_CONVERT(flag),
+                                              OMPI_SINGLE_NAME_CONVERT(flag),
                                               &c_req));
 
     if (MPI_SUCCESS == OMPI_FINT_2_INT(*ierr)) {

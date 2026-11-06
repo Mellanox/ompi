@@ -17,11 +17,13 @@
  *                         reserved.
  * Copyright (c) 2014-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2018      Amazon.com, Inc. or its affiliates.  All Rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "opal_config.h"
@@ -89,7 +91,8 @@ static int channel_addr2str(opal_btl_usnic_module_t *module, int channel, char *
  */
 static int add_procs_block_create_endpoints(opal_btl_usnic_module_t *module, size_t block_offset,
                                             size_t block_len, opal_proc_t **procs,
-                                            mca_btl_base_endpoint_t **endpoints)
+                                            mca_btl_base_endpoint_t **endpoints,
+                                            opal_bitmap_t *status)
 {
     int rc;
     opal_proc_t *my_proc;
@@ -144,6 +147,9 @@ static int add_procs_block_create_endpoints(opal_btl_usnic_module_t *module, siz
                             usnic_compat_proc_name_print(&opal_proc->proc_name), errhost);
                 free(errhost);
             }
+            continue;
+        } else if (OPAL_ERR_NOT_READY == rc) {
+            MCA_BTL_PROC_STATUS_SET(status, i, MCA_BTL_PROC_NO_INFO);
             continue;
         } else if (OPAL_SUCCESS != rc) {
             return OPAL_ERR_OUT_OF_RESOURCE;
@@ -408,7 +414,8 @@ static int add_procs_block_reap_fi_av_inserts(opal_btl_usnic_module_t *module, s
  */
 static int add_procs_create_endpoints(struct opal_btl_usnic_module_t *module, size_t nprocs,
                                       struct opal_proc_t **procs,
-                                      struct mca_btl_base_endpoint_t **endpoints)
+                                      struct mca_btl_base_endpoint_t **endpoints,
+                                      opal_bitmap_t *status)
 {
     /* We need to ensure that we don't overrun the libfabric AV EQ.
        Divide up all the peer address resolutions we need to do into a
@@ -449,7 +456,8 @@ static int add_procs_create_endpoints(struct opal_btl_usnic_module_t *module, si
 
         /* First, create endpoints (and procs, if they're not already
            created) for the usnic-reachable procs we were given. */
-        rc = add_procs_block_create_endpoints(module, block_offset, block_len, procs, endpoints);
+        rc = add_procs_block_create_endpoints(module, block_offset, block_len, procs, endpoints,
+                                              status);
         if (OPAL_SUCCESS != rc) {
             return rc;
         }
@@ -487,21 +495,23 @@ static int add_procs_create_endpoints(struct opal_btl_usnic_module_t *module, si
  */
 static int usnic_add_procs(struct mca_btl_base_module_t *base_module, size_t nprocs,
                            struct opal_proc_t **procs, struct mca_btl_base_endpoint_t **endpoints,
-                           opal_bitmap_t *reachable)
+                           opal_bitmap_t *status)
 {
     opal_btl_usnic_module_t *module = (opal_btl_usnic_module_t *) base_module;
     int rc;
 
     /* Go create the endpoints (including all relevant address
        resolution) */
-    rc = add_procs_create_endpoints(module, nprocs, procs, endpoints);
+    rc = add_procs_create_endpoints(module, nprocs, procs, endpoints, status);
     if (OPAL_SUCCESS != rc) {
         goto fail;
     }
 
-    /* Find all the endpoints with a complete set of USD destinations
-       and mark them as reachable */
-    for (size_t i = 0; NULL != reachable && i < nprocs; ++i) {
+    /* A complete set of USD destinations is usable. Reaping the AV
+       inserts already released the endpoints that could not resolve at
+       all, so an incomplete set is one still coming up: claim it
+       anyway, ahead of a btl of lower exclusivity. */
+    for (size_t i = 0; i < nprocs; ++i) {
         if (NULL != endpoints[i]) {
             bool happy = true;
             for (int channel = 0; channel < USNIC_NUM_CHANNELS; ++channel) {
@@ -511,9 +521,8 @@ static int usnic_add_procs(struct mca_btl_base_module_t *base_module, size_t npr
                 }
             }
 
-            if (happy) {
-                opal_bitmap_set_bit(reachable, i);
-            }
+            MCA_BTL_PROC_STATUS_SET(status, i,
+                                    happy ? MCA_BTL_PROC_CONNECTED : MCA_BTL_PROC_CONNECTING);
         }
     }
 
@@ -530,7 +539,7 @@ static int usnic_add_procs(struct mca_btl_base_module_t *base_module, size_t npr
         opal_btl_usnic_connectivity_map();
     }
 
-    return OPAL_SUCCESS;
+    return rc;
 
 fail:
     /* If we get here, it means something went terribly wrong.  Scorch
@@ -1564,10 +1573,14 @@ static int create_ep(opal_btl_usnic_module_t *module, struct opal_btl_usnic_chan
     } else {
         str = "UNKNOWN";
     }
-    opal_output_verbose(15, USNIC_OUT,
-                        "btl:usnic:create_ep:%s: new usnic local endpoint channel %s: %s:%d",
-                        module->linux_device_name, str, inet_ntoa(sin->sin_addr),
-                        ntohs(sin->sin_port));
+    {
+        char ep_addr[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &sin->sin_addr, ep_addr, sizeof(ep_addr));
+        opal_output_verbose(15, USNIC_OUT,
+                            "btl:usnic:create_ep:%s: new usnic local endpoint channel %s: %s:%d",
+                            module->linux_device_name, str, ep_addr,
+                            ntohs(sin->sin_port));
+    }
 
     return OPAL_SUCCESS;
 }
@@ -2292,7 +2305,8 @@ opal_btl_usnic_module_t opal_btl_usnic_module_template = {
                      /* Need to set FLAGS_SINGLE_ADD_PROCS until
                         btl_recv.h:lookup_sender() can handle an incoming
                         message with an unknown sender. */
-                     MCA_BTL_FLAGS_SINGLE_ADD_PROCS,
+                     MCA_BTL_FLAGS_SINGLE_ADD_PROCS |
+                     MCA_BTL_FLAGS_REQUIRE_SYNC_INIT,
 
         .btl_add_procs = usnic_add_procs,
         .btl_del_procs = usnic_del_procs,

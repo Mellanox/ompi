@@ -17,11 +17,13 @@
  * Copyright (c) 2015-2016 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 
@@ -29,7 +31,7 @@
  * Process identification structure interface
  *
  * Process identification structure interface.  The ompi_proc_t
- * structure contatins basic information about the remote (and local)
+ * structure contains basic information about the remote (and local)
  * processes.
  */
 
@@ -37,6 +39,7 @@
 #define OMPI_PROC_PROC_H
 
 #include "ompi_config.h"
+#include "ompi/constants.h"
 #include "ompi/types.h"
 
 #include "opal/util/proc.h"
@@ -75,6 +78,11 @@ struct ompi_proc_t {
 
     /** Is the process active? Used for OPAL_ENABLE_FT_MPI */
     bool                            proc_active;
+
+    /* What is known about this peer lives in super.proc_state; see
+     * OPAL_PROC_FLAG_*. This layer sets INITIALIZED once the peer's
+     * architecture is read and its convertor built, and WIRED around
+     * the PML's add_procs / del_procs. */
 
     /* endpoint data */
     void *proc_endpoints[OMPI_PROC_ENDPOINT_TAG_MAX];
@@ -119,7 +127,7 @@ OMPI_DECLSPEC extern opal_list_t  ompi_proc_list;
  * includes the architecture and hostname, which will be available by
  * the conclusion of the stage gate.
  *
- * @retval OMPI_SUCESS  System successfully initialized
+ * @retval OMPI_SUCCESS  System successfully initialized
  * @retval OMPI_ERROR   Initialization failed due to unspecified error
  */
 OMPI_DECLSPEC int ompi_proc_init(void);
@@ -136,15 +144,40 @@ OMPI_DECLSPEC int ompi_proc_complete_init(void);
 
 /**
  * Complete filling up the proc information (arch, name and locality) for
- * a given proc. This function is to be called only after the modex exchange
- * has been completed.
+ * a given proc. May be called before the peer has published its modex
+ * data: locality keeps its default and the architecture stays unknown.
  *
  * @param[in] proc the proc whose information will be filled up
  *
- * @retval OMPI_SUCCESS All information correctly set.
- * @retval OMPI_ERROR   Some info could not be initialized.
+ * @retval OMPI_SUCCESS      All information correctly set.
+ * @retval OMPI_ERR_NOT_READY The peer's architecture is not local yet,
+ *                            so nothing may be converted for it; call
+ *                            again once its modex data has landed.
+ * @retval OMPI_ERROR        Some info could not be initialized.
  */
 OMPI_DECLSPEC int ompi_proc_complete_init_single(ompi_proc_t* proc);
+
+/**
+ * Make sure this proc's architecture, and therefore its convertor, is
+ * the peer's and not our own default; a peer is seeded on first use.
+ *
+ * No read barrier on purpose: the convertor this flag announces is a
+ * second location, so a thread seeing the flip is not formally
+ * guaranteed to see it. Ordering that costs a barrier per message, for
+ * a window needing MPI_THREAD_MULTIPLE and mismatched architectures.
+ *
+ * Returns OMPI_SUCCESS once proc_convertor matches the peer, or
+ * OMPI_ERR_NOT_READY if it has not published its architecture yet.
+ */
+static inline int ompi_proc_ensure_arch(ompi_proc_t *proc)
+{
+#if OPAL_ENABLE_HETEROGENEOUS_SUPPORT
+    if (OPAL_UNLIKELY(!opal_proc_known(&proc->super, OPAL_PROC_FLAG_INITIALIZED))) {
+        return ompi_proc_complete_init_single(proc);
+    }
+#endif
+    return OMPI_SUCCESS;
+}
 
 /**
  * Finalize the OMPI Process subsystem
@@ -338,7 +371,7 @@ OMPI_DECLSPEC int ompi_proc_pack(ompi_proc_t **proclist,
  *                         provided if information is not needed.
  * @param[out] newproclist List of new procs added as a result of
  *                         the unpack operation.  NULL may be
- *                         provided if informationis not needed.
+ *                         provided if information is not needed.
  *
  * Return value:
  *   OMPI_SUCCESS               on success
@@ -360,7 +393,7 @@ OMPI_DECLSPEC int ompi_proc_unpack(pmix_data_buffer_t *buf,
  * @note This is primarily used when restarting a process and thus
  * need to update the jobid and node name.
  *
- * @retval OMPI_SUCESS  System successfully refreshed
+ * @retval OMPI_SUCCESS  System successfully refreshed
  * @retval OMPI_ERROR   Refresh failed due to unspecified error
  */
 OMPI_DECLSPEC int ompi_proc_refresh(void);
@@ -371,10 +404,22 @@ OMPI_DECLSPEC int ompi_proc_refresh(void);
  * @param[in] proc_name opal process name
  *
  * @returns cached or new ompi_proc_t for the given process name
+ * @returns NULL if the name belongs to a job we have not been introduced
+ *          to, or on allocation failure
  *
  * This function looks up the given process name in the hash of existing
  * ompi_proc_t structures. If no ompi_proc_t structure exists matching the
  * given name a new ompi_proc_t is allocated, initialized, and returned.
+ *
+ * @note Every caller must handle NULL. A name is only built into a proc if
+ * its jobid is one we have been introduced to: our own, recorded by
+ * ompi_proc_init(), and every job the runtime hands us through
+ * ompi_proc_find_and_add() -- instance setup, ompi_proc_unpack(), and dpm,
+ * which introduces a job before it connects to it. Any other name is
+ * refused, because this is also OPAL's opal_proc_for_name hook and some
+ * callers reach it with a name read out of an inbound connection
+ * handshake rather than one the runtime gave them. A jobid, once known,
+ * stays known for the life of the process.
  *
  * @note The ompi_proc_t is added to the local list of processes but is not
  * added to any communicator. ompi_comm_peer_lookup is responsible for caching

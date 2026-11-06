@@ -19,6 +19,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -27,7 +28,7 @@
 #include "ompi/mpi/fortran/base/constants.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_SESSION_ATTACH_BUFFER = ompi_session_attach_buffer_f
 #pragma weak pmpi_session_attach_buffer = ompi_session_attach_buffer_f
 #pragma weak pmpi_session_attach_buffer_ = ompi_session_attach_buffer_f
@@ -40,13 +41,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_SESSION_ATTACH_BUFFER,
                            pmpi_session_attach_buffer,
                            pmpi_session_attach_buffer_,
                            pmpi_session_attach_buffer__,
-                           pompi_session_attach_buffer_f,
+                           ompi_session_attach_buffer_f,
                            (MPI_Fint *session, char *buffer, MPI_Fint *size, MPI_Fint *ierr),
                            (session, buffer, size, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_SESSION_ATTACH_BUFFER = ompi_session_attach_buffer_f
 #pragma weak mpi_session_attach_buffer = ompi_session_attach_buffer_f
 #pragma weak mpi_session_attach_buffer_ = ompi_session_attach_buffer_f
@@ -55,17 +56,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_SESSION_ATTACH_BUFFER,
 #pragma weak MPI_Session_attach_buffer_f = ompi_session_attach_buffer_f
 #pragma weak MPI_Session_attach_buffer_f08 = ompi_session_attach_buffer_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_SESSION_ATTACH_BUFFER,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_SESSION_ATTACH_BUFFER,
                            mpi_session_attach_buffer,
                            mpi_session_attach_buffer_,
                            mpi_session_attach_buffer__,
                            ompi_session_attach_buffer_f,
                            (MPI_Fint *session, char *buffer, MPI_Fint *size, MPI_Fint *ierr),
                            (session, buffer, size, ierr) )
-#else
-#define ompi_session_attach_buffer_f pompi_session_attach_buffer_f
-#endif
 #endif
 
 

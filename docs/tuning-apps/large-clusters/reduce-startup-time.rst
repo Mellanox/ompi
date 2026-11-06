@@ -1,8 +1,6 @@
 Reducing startup time for jobs
 ==============================
 
-.. error:: TODO This whole section needs to be checked.
-
 There are several ways to reduce the startup time on large
 clusters. Some of them are described on this page. We continue to work
 on making startup even faster, especially on the large clusters coming
@@ -21,6 +19,24 @@ negative impacts on different applications.
 Some options are available when launching via ``mpirun`` or when launching using
 the native resource manager launcher (e.g., ``srun`` in a Slurm environment).
 These are activated by setting the corresponding MCA parameter, and include:
+
+* With the default ``ob1`` PML (and BTLs that do not require a
+  synchronizing ``add_procs``), Open MPI no longer waits for the
+  connection-info modex or builds BTL endpoints during ``MPI_Init``.
+  The first send or receive to a peer completes that process's
+  ``ompi_proc_t`` and constructs the BML/BTL endpoint once that peer's
+  modex is local.
+  An ``MPI_Isend`` posted before the blob arrives is staged in the PML
+  and started when the blob is ready; ``MPI_Send`` / ``MPI_Wait``
+  block in progress. Transports that cannot operate this way (for
+  example the ``usnic`` BTL, or ``psm2``) advertise
+  ``REQUIRE_SYNC_INIT`` and restore the previous wait-plus-world
+  ``add_procs`` during ``MPI_Init``.
+  The TCP BTL exposes the same choice as ``btl_tcp_connect_mode``
+  (``lazy``, ``sync_init``, or ``full``). To restore a synchronizing
+  ``MPI_Init`` over TCP without involving the shared-memory BTL, use
+  ``--mca pml ob1 --mca btl self,tcp --mca btl_tcp_connect_mode
+  sync_init`` (or ``full``).
 
 * Setting the ``pmix_base_async_modex`` MCA parameter will eliminate a
   global out-of-band collective operation during ``MPI_INIT``. This

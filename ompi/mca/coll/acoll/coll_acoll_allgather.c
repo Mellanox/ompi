@@ -6,6 +6,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -492,6 +493,14 @@ int mca_coll_acoll_allgather(const void *sbuf, size_t scount, struct ompi_dataty
         return ompi_coll_base_allgather_intra_ring(sbuf, scount, sdtype, rbuf, rcount, rdtype, comm,
                                                    module);
     }
+
+    /* Fallback to linear for small message sizes to avoid the barrier overhead */
+    size_t dsize;
+    ompi_datatype_type_size(rdtype, &dsize);
+    if (dsize * rcount < 512) {
+        return ompi_coll_base_allgather_intra_basic_linear(sbuf, scount, sdtype, rbuf, rcount, rdtype, comm, module);
+    }
+
 
     size = ompi_comm_size(comm);
     if (!subc->initialized && size > 2) {

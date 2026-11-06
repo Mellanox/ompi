@@ -24,6 +24,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 /**
@@ -136,8 +137,9 @@
  *          -> *ret will equal 7.
  *
  * 5. Fortran MPI-1 reads the attribute value.  The C int value is
- *    cast to a fortran INTEGER (i.e., MPI_Fint) -- potentially being
- *    truncated if sizeof(int) > sizeof(INTEGER).
+ *    cast to a fortran INTEGER (i.e., MPI_Fint).  configure requires
+ *    sizeof(INTEGER) >= sizeof(int) (see OMPI_SETUP_MPI_FORTRAN), so
+ *    this conversion is always exact.
  *
  * Example: INTEGER ret
  *          CALL MPI_ATTR_GET(..., ret, ierr)
@@ -297,7 +299,7 @@ do { \
         MPI_Fint f_key = OMPI_INT_2_FINT(key); \
         MPI_Fint f_err; \
         MPI_Fint attr_##type##_f;                \
-        attr_##type##_f = OMPI_INT_2_FINT(((ompi_##type##_t *)keyval_obj)->attr_##type##_f); \
+        attr_##type##_f = OMPI_INT_2_FINT(((ompi_##type##_t *)object)->attr_##type##_f); \
         /* MPI-1 Fortran-style */ \
         if (0 != (keyval_obj->attr_flag & OMPI_KEYVAL_F77_INT)) { \
             MPI_Fint attr_val = translate_to_fint(attribute); \

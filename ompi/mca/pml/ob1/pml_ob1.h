@@ -18,11 +18,13 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2018-2019 Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 /**
  *  @file
@@ -40,6 +42,7 @@
 #include "ompi/mca/pml/base/pml_base_sendreq.h"
 #include "ompi/datatype/ompi_datatype.h"
 #include "pml_ob1_hdr.h"
+#include "pml_ob1_events.h"
 #include "ompi/mca/bml/base/base.h"
 #include "ompi/proc/proc.h"
 #include "opal/mca/allocator/base/base.h"
@@ -80,6 +83,8 @@ struct mca_pml_ob1_t {
     opal_list_t send_pending;
     opal_list_t recv_pending;
     opal_list_t rdma_pending;
+    /* send requests waiting for a peer's connection-info blob */
+    opal_list_t modex_pending;
     /* List of pending fragments without a matching communicator */
     opal_list_t non_existing_communicator_pending;
     bool enabled;
@@ -95,6 +100,7 @@ extern mca_pml_ob1_t mca_pml_ob1;
 extern int mca_pml_ob1_output;
 extern bool mca_pml_ob1_matching_protection;
 extern int mca_pml_ob1_accelerator_events_max;
+extern int mca_pml_ob1_accelerator_events_batch;
 
 /*
  * PML interface functions.
@@ -119,6 +125,28 @@ extern int mca_pml_ob1_add_procs(
     struct ompi_proc_t **procs,
     size_t nprocs
 );
+
+struct mca_pml_ob1_send_request_t;
+
+/* Construct the BML endpoint if the peer blob is local, else NULL with
+ * status set. As for mca_bml_base_get_endpoint(), status is required. */
+extern struct mca_bml_base_endpoint_t *mca_pml_ob1_ensure_endpoint(ompi_proc_t *proc,
+                                                                   int *status);
+
+/* Recv-side wire-up for a named source, so that peer's send endpoint
+ * exists before we wait. Never called for ANY_SOURCE. */
+extern void mca_pml_ob1_prepare_recv_proc(ompi_proc_t *proc);
+
+/* Stage a send until the dest blob arrives, then start it. */
+extern int mca_pml_ob1_stage_or_start(struct mca_pml_ob1_send_request_t *sendreq,
+                                      int32_t seqn);
+
+/* Rebuild a send convertor that was prepared before its peer's
+ * architecture was known. */
+extern void mca_pml_ob1_reprepare_send_convertor(struct mca_pml_ob1_send_request_t *sendreq);
+
+/* Start whatever staged sends can now reach their peer; returns how many. */
+extern int mca_pml_ob1_drain_staged_sends(void);
 
 extern int mca_pml_ob1_del_procs(
     struct ompi_proc_t **procs,
@@ -255,6 +283,16 @@ do {                                                            \
         (opal_free_list_item_t*)pckt);                          \
 } while(0)
 
+/**
+ * A thread-safe function that should be called every time we need the OB1
+ * progress to be turned (or kept) on -- with a positive count -- and once
+ * with a negative count when that work is done. A count is owed by work
+ * nothing else will come back for: a send parked on an unreachable peer,
+ * a fragment from a peer we cannot convert from, a control packet a btl
+ * refused. An unreleased count polls for the life of the job.
+ */
+void mca_pml_ob1_enable_progress(int32_t count);
+
 static inline void mca_pml_ob1_add_to_pending (ompi_proc_t *proc, mca_bml_base_btl_t *bml_btl,
                                                int order, mca_pml_ob1_hdr_t *hdr, size_t hdr_size)
 {
@@ -270,6 +308,10 @@ static inline void mca_pml_ob1_add_to_pending (ompi_proc_t *proc, mca_bml_base_b
     OPAL_THREAD_SCOPED_LOCK(&mca_pml_ob1.lock, {
             opal_list_append(&mca_pml_ob1.pckt_pending, &pckt->super.super);
         });
+    /* Drive mca_pml_ob1_progress() so the queue is retried from opal_progress()
+     * even if no further BTL completion fires to call
+     * MCA_PML_OB1_PROGRESS_PENDING. */
+    mca_pml_ob1_enable_progress(1);
 }
 
 #define OB1_MATCHING_LOCK(lock)                                  \
@@ -410,12 +452,6 @@ mca_pml_ob1_calc_weighted_length( mca_pml_ob1_com_btl_t *btls, int num_btls, siz
     /* account for rounding errors */
     btls[0].length += length_left;
 }
-
-/**
- * A thread-safe function that should be called every time we need the OB1
- * progress to be turned (or kept) on.
- */
-int mca_pml_ob1_enable_progress(int32_t count);
 
 int mca_pml_ob1_send_control_any (ompi_proc_t *proc, int order, mca_pml_ob1_hdr_t *hdr, size_t hdr_size,
                                   bool add_to_pending);

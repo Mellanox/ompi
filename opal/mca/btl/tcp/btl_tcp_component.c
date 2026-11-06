@@ -15,17 +15,18 @@
  * Copyright (c) 2009      Oak Ridge National Laboratory
  * Copyright (c) 2012-2015 Los Alamos National Security, LLC.  All rights
  *                         reserved.
- * Copyright (c) 2013-2015 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2013-2026 NVIDIA Corporation.  All rights reserved.
  * Copyright (c) 2014-2019 Intel, Inc.  All rights reserved.
  * Copyright (c) 2014-2017 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2018-2022 Amazon.com, Inc. or its affiliates.  All Rights reserved.
- * Copyright (c) 2023      Jeffrey M. Squyres.  All rights reserved.
+ * Copyright (c) 2023-2026 Jeffrey M. Squyres.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  *
  */
 
@@ -45,6 +46,9 @@
 #endif
 #ifdef HAVE_NETINET_IN_H
 #    include <netinet/in.h>
+#endif
+#ifdef HAVE_NET_IF_H
+#    include <net/if.h>
 #endif
 #ifdef HAVE_ARPA_INET_H
 #    include <arpa/inet.h>
@@ -67,6 +71,7 @@
 #endif /* HAVE_UNISTD_H */
 
 #include "opal/constants.h"
+#include "opal/mca/base/mca_base_var_enum.h"
 #include "opal/mca/btl/base/base.h"
 #include "opal/mca/btl/base/btl_base_error.h"
 #include "opal/mca/btl/btl.h"
@@ -230,6 +235,13 @@ static inline unsigned int mca_btl_tcp_param_register_uint(const char *param_nam
     return *storage;
 }
 
+static const mca_base_var_enum_value_t mca_btl_tcp_connect_mode_values[] = {
+    {.value = MCA_BTL_TCP_CONNECT_LAZY, .string = "lazy"},
+    {.value = MCA_BTL_TCP_CONNECT_SYNC_INIT, .string = "sync_init"},
+    {.value = MCA_BTL_TCP_CONNECT_FULL, .string = "full"},
+    {.string = NULL},
+};
+
 /*
  * Data structure for accepting connections.
  */
@@ -256,6 +268,37 @@ static void mca_btl_tcp_event_destruct(mca_btl_tcp_event_t *event)
 
 OBJ_CLASS_INSTANCE(mca_btl_tcp_event_t, opal_list_item_t, mca_btl_tcp_event_construct,
                    mca_btl_tcp_event_destruct);
+
+/*
+ * An inbound connection held until its peer's modex info arrives.
+ * Derived from the event above so it lands on tcp_events and component
+ * close tears it down; the socket is this record's until an endpoint
+ * takes it.
+ */
+struct mca_btl_tcp_pending_accept_t {
+    mca_btl_tcp_event_t super;
+    opal_process_name_t guid;
+    struct sockaddr_storage addr;
+    int retries_left;
+    int sd;
+};
+typedef struct mca_btl_tcp_pending_accept_t mca_btl_tcp_pending_accept_t;
+
+static void mca_btl_tcp_pending_accept_construct(mca_btl_tcp_pending_accept_t *pending)
+{
+    pending->sd = -1;
+}
+
+static void mca_btl_tcp_pending_accept_destruct(mca_btl_tcp_pending_accept_t *pending)
+{
+    if (0 <= pending->sd) {
+        CLOSE_THE_SOCKET(pending->sd);
+        pending->sd = -1;
+    }
+}
+
+OBJ_CLASS_INSTANCE(mca_btl_tcp_pending_accept_t, mca_btl_tcp_event_t,
+                   mca_btl_tcp_pending_accept_construct, mca_btl_tcp_pending_accept_destruct);
 
 /*
  * functions for receiving event callbacks
@@ -289,6 +332,8 @@ static int mca_btl_tcp_component_verify(void)
 static int mca_btl_tcp_component_register(void)
 {
     char *message;
+    mca_base_var_enum_t *new_enum = NULL;
+    int rc;
 
     /* register TCP component parameters */
     mca_btl_tcp_param_register_uint("links", NULL, 1, OPAL_INFO_LVL_4,
@@ -374,6 +419,31 @@ static int mca_btl_tcp_component_register(void)
     mca_btl_tcp_param_register_int("handshake_timeout", "Timeout (usec) for connection handshake. Connection is dropped if the handshake has not been received during this time frame",
                                    1 * 1000000  /* 1s */, OPAL_INFO_LVL_4,
                                    &mca_btl_tcp_component.tcp_handshake_timeout);
+    mca_btl_tcp_param_register_int("accept_retry_interval", "How often (usec) to look again for the modex info of a peer whose incoming connection arrived before it",
+                                   100  /* .1ms */, OPAL_INFO_LVL_5,
+                                   &mca_btl_tcp_component.tcp_accept_retry_interval);
+    mca_btl_tcp_param_register_int("accept_retry_timeout", "How long (usec) to keep looking before dropping the connection. A safety net against a peer that never resolves, not a latency control",
+                                   30 * 1000000  /* 30s */, OPAL_INFO_LVL_5,
+                                   &mca_btl_tcp_component.tcp_accept_retry_timeout);
+
+    mca_btl_tcp_component.tcp_connect_mode = MCA_BTL_TCP_CONNECT_LAZY;
+    rc = mca_base_var_enum_create("btl_tcp_connect_mode", mca_btl_tcp_connect_mode_values,
+                                  &new_enum);
+    if (OPAL_SUCCESS != rc) {
+        return rc;
+    }
+    (void) mca_base_component_var_register(
+        &mca_btl_tcp_component.super.btl_version, "connect_mode",
+        "How the TCP BTL constructs peer endpoints relative to MPI_Init "
+        "(default: lazy). lazy: on first send, receive, or incoming fragment. "
+        "sync_init: wait for the connection-info modex and construct endpoints "
+        "during MPI_Init. full: like sync_init, and require a single add_procs "
+        "of the whole job. The ob1 PML ORs these requirements across selected "
+        "BTLs; to exercise TCP's setting without the shared-memory BTL, use "
+        "--mca pml ob1 --mca btl self,tcp.",
+        MCA_BASE_VAR_TYPE_INT, new_enum, 0, 0, OPAL_INFO_LVL_2, MCA_BASE_VAR_SCOPE_READONLY,
+        &mca_btl_tcp_component.tcp_connect_mode);
+    OBJ_RELEASE(new_enum);
 
     /* Check if we should support async progress */
     mca_btl_tcp_param_register_int("progress_thread", NULL, 0, OPAL_INFO_LVL_1,
@@ -384,6 +454,15 @@ static int mca_btl_tcp_component_register(void)
         "Issue a warning for all unfound interfaces included in if_exclude", MCA_BASE_VAR_TYPE_BOOL,
         NULL, 0, 0, OPAL_INFO_LVL_2, MCA_BASE_VAR_SCOPE_READONLY,
         &mca_btl_tcp_component.report_all_unfound_interfaces);
+
+    mca_btl_tcp_component.tcp_if_require_carrier = true;
+    (void) mca_base_component_var_register(
+        &mca_btl_tcp_component.super.btl_version, "if_require_carrier",
+        "Ignore an interface that is administratively up but has no carrier "
+        "(IFF_RUNNING clear), such as a container bridge with nothing attached. "
+        "Set to 0 to use such interfaces anyway",
+        MCA_BASE_VAR_TYPE_BOOL, NULL, 0, 0, OPAL_INFO_LVL_4, MCA_BASE_VAR_SCOPE_READONLY,
+        &mca_btl_tcp_component.tcp_if_require_carrier);
 
     mca_btl_tcp_module.super.btl_exclusivity = MCA_BTL_EXCLUSIVITY_LOW + 100;
     mca_btl_tcp_module.super.btl_eager_limit = 64 * 1024;
@@ -409,6 +488,13 @@ static int mca_btl_tcp_component_register(void)
 
     mca_btl_base_param_register(&mca_btl_tcp_component.super.btl_version,
                                 &mca_btl_tcp_module.super);
+    /* After mca_btl_base_param_register() so btl_tcp_flags cannot strip
+     * these bits. */
+    if (MCA_BTL_TCP_CONNECT_SYNC_INIT == mca_btl_tcp_component.tcp_connect_mode) {
+        mca_btl_tcp_module.super.btl_flags |= MCA_BTL_FLAGS_REQUIRE_SYNC_INIT;
+    } else if (MCA_BTL_TCP_CONNECT_FULL == mca_btl_tcp_component.tcp_connect_mode) {
+        mca_btl_tcp_module.super.btl_flags |= MCA_BTL_FLAGS_SINGLE_ADD_PROCS;
+    }
     if (mca_btl_tcp_module.super.btl_rdma_pipeline_frag_size > ((1UL << 31) - 1024)) {
         /* Assume a hard limit. A test in configure would be a better solution, but until then
          * kicking-in the pipeline RDMA for extremely large data is good enough. */
@@ -475,6 +561,7 @@ static int mca_btl_tcp_component_open(void)
 static int mca_btl_tcp_component_close(void)
 {
     mca_btl_tcp_event_t *event, *next;
+    bool free_event_base = false;
 
     /**
      * If we have a progress thread we should shut it down before
@@ -496,8 +583,10 @@ static int mca_btl_tcp_component_close(void)
             assert(-1 == mca_btl_tcp_progress_thread_trigger);
         }
         opal_event_del(&mca_btl_tcp_component.tcp_recv_thread_async_event);
-        opal_event_base_free(mca_btl_tcp_event_base);
-        mca_btl_tcp_event_base = NULL;
+        /* This private base still hosts the listening-socket events, the
+           pending tcp_events, and the endpoint events, all deleted below --
+           it cannot be freed until they are gone.  Just note that we own it. */
+        free_event_base = true;
 
         /* Close the remaining pipes */
         if (-1 != mca_btl_tcp_pipe_to_progress[0]) {
@@ -547,6 +636,21 @@ static int mca_btl_tcp_component_close(void)
     OBJ_DESTRUCT(&mca_btl_tcp_component.tcp_lock);
     OPAL_LIST_DESTRUCT(&mca_btl_tcp_component.local_ifs);
 
+    /* Every event this component registered has now been deleted, so a
+       private (progress thread) base can finally be freed. */
+    if (free_event_base) {
+        opal_event_base_free(mca_btl_tcp_event_base);
+    }
+    /* Drop the alias on every close path, owned base or not.  OPAL may free
+       and recreate the shared base between this close and a future open of
+       this component (MPI Sessions closes and re-opens the btl framework),
+       and mca_btl_tcp_component_create_listen() decides whether it still
+       needs a progress-thread base by NULL-checking this pointer -- which
+       mca_btl_tcp_component_open() never resets.  A stale alias would make
+       the next open skip base creation and register events on a base from a
+       dead generation. */
+    mca_btl_tcp_event_base = NULL;
+
     return OPAL_SUCCESS;
 }
 
@@ -584,6 +688,32 @@ static int mca_btl_tcp_create(const int if_kindex, const char *if_name)
         if (if_kindex != selected_interface->if_kernel_index) {
             continue;
         }
+
+        /* An interface can be administratively up (IFF_UP, which is all the
+         * opal "if" components screen on) and still have no carrier
+         * (IFF_RUNNING clear) -- a container bridge with nothing attached is
+         * the ordinary way that happens, docker0 being the common case.
+         *
+         * Such an interface cannot be used, because it cannot honour its own
+         * address as the source of a connection.
+         * mca_btl_tcp_endpoint_start_connect() binds that address
+         * deliberately, so that the peer can pair btl modules by the source
+         * it sees; with the route marked linkdown the kernel sources the
+         * connection from somewhere else instead, and the peer then refuses
+         * it for the module it was meant for ("Match incoming connection ...
+         * failed").  The socket is adopted by a different module, both sides
+         * believe they are wired, and the first message that needs the
+         * mispaired module never arrives.
+         */
+#if defined(IFF_RUNNING)
+        if (mca_btl_tcp_component.tcp_if_require_carrier
+            && 0 == (selected_interface->if_flags & IFF_RUNNING)) {
+            opal_output_verbose(5, opal_btl_base_framework.framework_output,
+                                "btl: tcp: ignoring %s: administratively up but no carrier",
+                                if_name);
+            continue;
+        }
+#endif
 
         if_index = selected_interface->if_index;
 
@@ -891,7 +1021,7 @@ static int mca_btl_tcp_component_create_instances(void)
 
     /* allocate memory for btls */
     mca_btl_tcp_component.tcp_btls = (mca_btl_tcp_module_t **) malloc(
-        mca_btl_tcp_component.tcp_num_links * kif_count * sizeof(mca_btl_tcp_module_t *));
+        (size_t)mca_btl_tcp_component.tcp_num_links * kif_count * sizeof(mca_btl_tcp_module_t *));
     if (NULL == mca_btl_tcp_component.tcp_btls) {
         ret = OPAL_ERR_OUT_OF_RESOURCE;
         goto cleanup;
@@ -1388,24 +1518,6 @@ mca_btl_base_module_t **mca_btl_tcp_component_init(int *num_btl_modules,
         }
     }
 
-    /* Avoid a race in wire-up when using threads (progress or user)
-       and multiple BTL modules.  The details of the race are in
-       https://github.com/open-mpi/ompi/issues/3035#issuecomment-429500032,
-       but the summary is that the lookup code in
-       component_recv_handler() below assumes that add_procs() is
-       atomic across all active TCP BTL modules, but in multi-threaded
-       code, that isn't guaranteed, because the locking is inside
-       add_procs(), and add_procs() is called once per module.  This
-       isn't a proper fix, but will solve the "dropped connection"
-       problem until we can come up with a more complete fix to how we
-       initialize procs, endpoints, and modules in the TCP BTL. */
-    if (mca_btl_tcp_component.tcp_num_btls > 1
-        && (enable_mpi_threads || 0 < mca_btl_tcp_progress_thread_trigger)) {
-        for (i = 0; i < mca_btl_tcp_component.tcp_num_btls; i++) {
-            mca_btl_tcp_component.tcp_btls[i]->super.btl_flags |= MCA_BTL_FLAGS_SINGLE_ADD_PROCS;
-        }
-    }
-
     memcpy(btls, mca_btl_tcp_component.tcp_btls,
            mca_btl_tcp_component.tcp_num_btls * sizeof(mca_btl_tcp_module_t *));
     *num_btl_modules = mca_btl_tcp_component.tcp_num_btls;
@@ -1451,6 +1563,107 @@ static void mca_btl_tcp_component_accept_handler(int incoming_sd, short ignored,
     }
 }
 
+static void mca_btl_tcp_pending_accept_handler(int sd, short flags, void *user);
+
+/* Zero would divide by zero in the budget below and make the retry a
+ * busy loop. */
+static int mca_btl_tcp_accept_retry_interval(void)
+{
+    int interval = mca_btl_tcp_component.tcp_accept_retry_interval;
+
+    return (0 < interval) ? interval : 1;
+}
+
+/* The bound is a count of retries rather than a deadline: the only
+ * elapsed-time source here is opal_timer_base_get_usec(), a constant
+ * zero under the null timer backend that every platform other than
+ * Linux and Darwin falls back to, and no deadline built on it ever
+ * expires. */
+static int mca_btl_tcp_accept_retry_budget(void)
+{
+    int interval = mca_btl_tcp_accept_retry_interval();
+    int timeout = mca_btl_tcp_component.tcp_accept_retry_timeout;
+
+    if (0 >= timeout) {
+        return 0;
+    }
+    return (timeout + interval - 1) / interval;
+}
+
+/* Look again a little later; what changes the answer runs elsewhere. */
+static void mca_btl_tcp_pending_accept_arm(mca_btl_tcp_pending_accept_t *pending)
+{
+    int interval = mca_btl_tcp_accept_retry_interval();
+    struct timeval tv;
+
+    tv.tv_sec = interval / 1000000;
+    tv.tv_usec = interval % 1000000;
+    opal_event_evtimer_set(mca_btl_tcp_event_base, &pending->super.event,
+                           mca_btl_tcp_pending_accept_handler, pending);
+    opal_event_evtimer_add(&pending->super.event, &tv);
+}
+
+/*
+ * Hold the connection rather than hang up on a peer that is waiting for
+ * it and will not offer another.  Bounded, because a guid naming our own
+ * job but no live rank of it still builds a process entry, and the fetch
+ * that starts carries no PMIX_IMMEDIATE, so PMIx may wait forever.
+ * Generous, though: a legitimate peer under a direct modex was measured
+ * at two seconds.
+ */
+static void mca_btl_tcp_pending_accept_defer(const opal_process_name_t *guid,
+                                             const struct sockaddr_storage *addr, int sd)
+{
+    mca_btl_tcp_pending_accept_t *pending = OBJ_NEW(mca_btl_tcp_pending_accept_t);
+
+    if (NULL == pending) {
+        CLOSE_THE_SOCKET(sd);
+        return;
+    }
+    pending->guid = *guid;
+    pending->addr = *addr;
+    pending->retries_left = mca_btl_tcp_accept_retry_budget();
+    pending->sd = sd;
+    mca_btl_tcp_pending_accept_arm(pending);
+}
+
+static void mca_btl_tcp_pending_accept_handler(int sd, short flags, void *user)
+{
+    mca_btl_tcp_pending_accept_t *pending = (mca_btl_tcp_pending_accept_t *) user;
+    mca_btl_tcp_proc_t *btl_proc;
+    int accepted_sd, rc;
+
+    btl_proc = mca_btl_tcp_proc_lookup(&pending->guid, &rc);
+    if (NULL == btl_proc) {
+        if (OPAL_ERR_NOT_READY == rc) {
+            if (0 < pending->retries_left) {
+                pending->retries_left--;
+                mca_btl_tcp_pending_accept_arm(pending);
+                return;
+            }
+            opal_show_help("help-mpi-btl-tcp.txt", "server accept modex timeout", true,
+                           opal_process_info.nodename, getpid(),
+                           OPAL_NAME_PRINT(pending->guid),
+                           mca_btl_tcp_component.tcp_accept_retry_timeout);
+            OBJ_RELEASE(pending);
+            return;
+        }
+        /* Any other status is final: a peer whose fetch failed reads as
+         * published-or-absent from then on. */
+        opal_show_help("help-mpi-btl-tcp.txt", "server accept cannot find guid", true,
+                       opal_process_info.nodename, getpid());
+        OBJ_RELEASE(pending);
+        return;
+    }
+
+    /* accept() takes the socket over on every path, so drop this
+     * record's claim on it first. */
+    accepted_sd = pending->sd;
+    pending->sd = -1;
+    mca_btl_tcp_proc_accept(btl_proc, (struct sockaddr *) &pending->addr, accepted_sd);
+    OBJ_RELEASE(pending);
+}
+
 /**
  * Event callback when there is data available on the registered
  * socket to recv. This callback is triggered only once per lifetime
@@ -1469,6 +1682,7 @@ static void mca_btl_tcp_component_recv_handler(int sd, short flags, void *user)
     mca_btl_tcp_endpoint_hs_msg_t hs_msg;
     struct timeval save, tv;
     socklen_t rcvtimeo_save_len = sizeof(save);
+    int rc;
 
     /* Note, Socket will be in blocking mode during initial handshake
      * hence setting SO_RCVTIMEO to a timeout here to avoid waiting
@@ -1573,15 +1787,6 @@ static void mca_btl_tcp_component_recv_handler(int sd, short flags, void *user)
         }
     }
 
-    /* lookup the corresponding process */
-    btl_proc = mca_btl_tcp_proc_lookup(&guid);
-    if (NULL == btl_proc) {
-        opal_show_help("help-mpi-btl-tcp.txt", "server accept cannot find guid", true,
-                       opal_process_info.nodename, getpid());
-        CLOSE_THE_SOCKET(sd);
-        return;
-    }
-
     /* lookup peer address */
     if (getpeername(sd, (struct sockaddr *) &addr, &addr_len) != 0) {
         if (ENOTCONN != opal_socket_errno) {
@@ -1589,6 +1794,23 @@ static void mca_btl_tcp_component_recv_handler(int sd, short flags, void *user)
                            opal_process_info.nodename, getpid(), strerror(opal_socket_errno),
                            opal_socket_errno);
         }
+        CLOSE_THE_SOCKET(sd);
+        return;
+    }
+
+    /* lookup the corresponding process */
+    btl_proc = mca_btl_tcp_proc_lookup(&guid, &rc);
+    if (NULL == btl_proc) {
+        if (OPAL_ERR_NOT_READY == rc) {
+            /* The peer's modex info has not arrived yet.  A peer that
+             * dialled an address we published has committed its own, so
+             * this is worth waiting out -- within a deadline, since only
+             * a well-behaved peer is described by that. */
+            mca_btl_tcp_pending_accept_defer(&guid, &addr, sd);
+            return;
+        }
+        opal_show_help("help-mpi-btl-tcp.txt", "server accept cannot find guid", true,
+                       opal_process_info.nodename, getpid());
         CLOSE_THE_SOCKET(sd);
         return;
     }

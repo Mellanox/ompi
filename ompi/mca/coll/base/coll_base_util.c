@@ -14,12 +14,15 @@
  * Copyright (c) 2023      Jeffrey M. Squyres.  All rights reserved.
  *
  * Copyright (c) 2024      NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2025      Triad National Security, LLC. All rights
+ *                         reserved.
  *
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -134,7 +137,7 @@ int ompi_rounddown(int num, int factor)
 /**
  * Release all objects and arrays stored into the nbc_request.
  * The release_arrays are temporary memory to stored the values
- * converted from Fortran, and should disappear in same time as the
+ * converted from Fortran or elsewhere, and should disappear in same time as the
  * request itself.
  */
 static void
@@ -149,11 +152,16 @@ release_objs_callback(struct ompi_coll_base_nbc_request_t *request)
         request->data.refcounted.objs.objs[1] = NULL;
     }
     for(int i = 0; i < OMPI_REQ_NB_RELEASE_ARRAYS; i++ ) {
-        if (NULL == request->data.release_arrays[i]) {
+        /* Atomically claim each slot: the post-append drain in
+         * ompi_coll_base_add_release_arrays_cb() can race with this
+         * callback on an asynchronous-progress completion, and the
+         * swap guarantees each array is freed exactly once. */
+        void *array = (void *) opal_atomic_swap_ptr(
+            &request->data.release_arrays[i], (intptr_t) NULL);
+        if (NULL == array) {
             break;
         }
-        free(request->data.release_arrays[i]);
-        request->data.release_arrays[i] = NULL;
+        free(array);
     }
 }
 
@@ -268,6 +276,7 @@ static void release_vecs_callback(ompi_coll_base_nbc_request_t *request)
         }
         request->data.refcounted.vecs.rtypes = NULL;
     }
+    release_objs_callback(request);
 }
 
 static int complete_vecs_callback(struct ompi_request_t *req) {
@@ -346,13 +355,51 @@ int ompi_coll_base_retain_datatypes_w( ompi_request_t *req,
     return OMPI_SUCCESS;
 }
 
+int ompi_coll_base_add_release_arrays_cb(ompi_request_t *req)
+{
+    ompi_coll_base_nbc_request_t *request = (ompi_coll_base_nbc_request_t *)req;
+
+    assert(NULL != request);
+
+    if (req->req_persistent) {
+        if (req->req_free != free_objs_callback &&
+            req->req_free != free_vecs_callback) {
+            /* Chain whatever free hook is installed (including none),
+             * the same way the retain helpers do.  Our own hooks
+             * already drain the release arrays. */
+            request->cb.req_free = req->req_free;
+            req->req_free = free_objs_callback;
+        }
+    } else if (req->req_complete_cb != complete_objs_callback &&
+               req->req_complete_cb != complete_vecs_callback) {
+        request->cb.req_complete_cb = req->req_complete_cb;
+        request->req_complete_cb_data = req->req_complete_cb_data;
+        req->req_complete_cb = complete_objs_callback;
+        req->req_complete_cb_data = request;
+    }
+
+    /* The operation may already have completed -- either before this
+     * call (the completion callback ran too early to see the arrays,
+     * or was not installed yet) or concurrently with it.  Drain
+     * inline in that case; the atomic swap in release_objs_callback()
+     * makes the two drains safe against each other.  Persistent
+     * requests are excluded: their arrays must live until the request
+     * is freed, and the req_free hook above handles that. */
+    if (!req->req_persistent && REQUEST_COMPLETE(req)) {
+        release_objs_callback(request);
+    }
+    return OMPI_SUCCESS;
+}
+
 static void nbc_req_constructor(ompi_coll_base_nbc_request_t *req)
 {
     req->cb.req_complete_cb = NULL;
     req->req_complete_cb_data = NULL;
     req->data.refcounted.objs.objs[0] = NULL;
     req->data.refcounted.objs.objs[1] = NULL;
-    req->data.release_arrays[0] = NULL;
+    for (int i = 0; i < OMPI_REQ_NB_RELEASE_ARRAYS; i++ ) {
+        req->data.release_arrays[i] = 0;
+    }
 }
 
 OBJ_CLASS_INSTANCE(ompi_coll_base_nbc_request_t, ompi_request_t, nbc_req_constructor, NULL);

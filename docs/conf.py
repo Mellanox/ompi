@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 # Configuration file for the Sphinx documentation builder.
 #
 # This file only contains a selection of the most common options. For a full
@@ -14,12 +15,24 @@ import os
 
 # -- Project information -----------------------------------------------------
 
-import os
 import re
+import json
 import datetime
 import sphobjinv as soi
 
-year = datetime.datetime.now().year
+# For reproducible builds, derive the copyright year from SOURCE_DATE_EPOCH
+# when it is set (mirroring config/getdate.sh and Sphinx's own format_date,
+# which already honor it for the "Last updated on:" footer); otherwise fall
+# back to the current wall-clock year.  See https://reproducible-builds.org/.
+_source_date_epoch = os.environ.get('SOURCE_DATE_EPOCH')
+try:
+    if _source_date_epoch:
+        year = datetime.datetime.fromtimestamp(
+            int(_source_date_epoch), datetime.timezone.utc).year
+    else:
+        year = datetime.datetime.now().year
+except (ValueError, OverflowError, OSError):
+    year = datetime.datetime.now().year
 
 project = 'Open MPI'
 copyright = f'2003-{year}, The Open MPI Community'
@@ -101,6 +114,11 @@ autoconf_min_version = f"{ompi_data['autoconf_min_version']}"
 libtool_min_version = f"{ompi_data['libtool_min_version']}"
 flex_min_version = f"{ompi_data['flex_min_version']}"
 python_min_version = f"{ompi_data['python_min_version']}"
+m4_dist_version = f"{ompi_data['m4_dist_version']}"
+autoconf_dist_version = f"{ompi_data['autoconf_dist_version']}"
+automake_dist_version = f"{ompi_data['automake_dist_version']}"
+libtool_dist_version = f"{ompi_data['libtool_dist_version']}"
+flex_dist_version = f"{ompi_data['flex_dist_version']}"
 mpi_standard_major_version = f"{ompi_data['mpi_standard_version']}"
 mpi_standard_minor_version = f"{ompi_data['mpi_standard_subversion']}"
 
@@ -173,7 +191,6 @@ if os.environ.get('READTHEDOCS') == 'True':
 # ones.
 import sphinx_rtd_theme
 extensions = [
-    'recommonmark',
     "sphinx_rtd_theme",
     "sphinx.ext.extlinks",
     "sphinx.ext.intersphinx",
@@ -309,8 +326,30 @@ templates_path = ['_templates']
 # Hence, listing prrte-rst-content in exclude_patterns means that
 # Sphinx won't complain about the .rst files in that tree that we are
 # not referencing from here in the OMPI docs.
+#
+# The schizo-ompi-rst-content/ directory is excluded for a similar
+# reason: the only file we use from it is schizo-ompi-cli.rstxt (via
+# ".. include::" in mpirun.1.rst, which still works for excluded
+# paths).  In ReadTheDocs builds, that directory is a full copy of
+# PRRTE's src/mca/schizo/ompi source directory (see
+# .readthedocs-pre-create-environment.sh), which can contain Markdown
+# files (e.g., AGENTS.md) that Sphinx would otherwise parse as source
+# documents and then warn about their unresolvable relative links.
+# Note: llms-src/ holds the committed curated Markdown sources for the
+# LLM-friendly docs, and llms-build/ is the generated LLM artifact staging
+# tree.  Both contain Markdown that must NOT be picked up as Sphinx source
+# documents; they are published into the HTML output by a separate copy step
+# in docs/Makefile.am (not via html_extra_path, which exclude_patterns would
+# also suppress).
+#
+# The html/ and man/ directories are the pre-rendered output copies that ship
+# in distribution tarballs (see html-local / man in Makefile.am).  Now that
+# html/llms/ contains generated Markdown, html/ (and man/, for symmetry) must
+# also be excluded so Sphinx does not re-parse those copies as source.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', 'venv', 'py*/**',
-                    'prrte-rst-content' ]
+                    'tuning-apps/_include', 'prrte-rst-content',
+                    'schizo-ompi-rst-content',
+                    'llms-src', 'llms-build', 'html', 'man' ]
 
 
 # Clarify the language for verbatim blocks (::)
@@ -383,6 +422,29 @@ man_pages = find_man_pages_top()
 
 # -- Open MPI-specific options -----------------------------------------------
 
+# The two MPI object-name length limits that the *_set_name / *_get_name man
+# pages reference via substitutions.  Open MPI honors the long-standing
+# OPAL_MAX_OBJECT_NAME on its traditional ("OMPI") API entry points, and the
+# larger MPI Forum ABI value on its standard-ABI entry points.
+#
+# The Forum ABI value is read from the same standard ABI JSON that the binding
+# generator (ompi/mpi/bindings/c_header.py) consumes, so it remains the single
+# source of truth.  The OMPI value is read from the configured opal_config.h
+# when available, with a fallback for environments that build the docs without
+# first configuring (e.g. some Read the Docs flows).
+mpi_abi_max_object_name = json.load(
+    open(f"{ompi_top_srcdir}/docs/mpi-standard-abi.json")
+)["constants"]["mpi_max_object_name"]["abi_value"]
+
+ompi_max_object_name = 64
+try:
+    with open(f"{ompi_top_srcdir}/opal/include/opal_config.h") as _f:
+        _m = re.search(r"^#define\s+OPAL_MAX_OBJECT_NAME\s+(\d+)", _f.read(), re.M)
+        if _m:
+            ompi_max_object_name = int(_m.group(1))
+except OSError:
+    pass
+
 # This prolog is included in every file.  Put common stuff here.
 
 rst_prolog = f"""
@@ -406,9 +468,16 @@ rst_prolog = f"""
 .. |libtool_min_version| replace:: {libtool_min_version}
 .. |flex_min_version| replace:: {flex_min_version}
 .. |python_min_version| replace:: {python_min_version}
+.. |m4_dist_version| replace:: {m4_dist_version}
+.. |autoconf_dist_version| replace:: {autoconf_dist_version}
+.. |automake_dist_version| replace:: {automake_dist_version}
+.. |libtool_dist_version| replace:: {libtool_dist_version}
+.. |flex_dist_version| replace:: {flex_dist_version}
 .. |mpi_standard_version| replace:: {mpi_standard_major_version}.{mpi_standard_minor_version}
 .. |mpi_standard_major_version| replace:: {mpi_standard_major_version}
 .. |mpi_standard_minor_version| replace:: {mpi_standard_minor_version}
+.. |ompi_max_object_name| replace:: {ompi_max_object_name}
+.. |mpi_abi_max_object_name| replace:: {mpi_abi_max_object_name}
 .. |deprecated_favor| replace:: this routine is deprecated in favor of
 
 .. |br| raw:: html
@@ -429,3 +498,48 @@ rst_prolog += """
    .wy-table-responsive table td,.wy-table-responsive table th{white-space:normal}
    </style>
 """
+
+# -- LLM-friendly documentation artifacts ------------------------------------
+
+# The LLM-friendly artifacts are generated into a build-tree staging directory
+# (<builddir>/llms-build/) by docs/generate-llm-docs.py -- run from the Makefile
+# (the SENTINEL_OMPI_LLM target) for "make" builds, and from
+# .readthedocs-pre-create-environment.sh for Read the Docs builds (which do not
+# run "make").  They are deliberately excluded from Sphinx source discovery
+# (see exclude_patterns above), so we publish them by copying the staging tree
+# into the HTML output in a "build-finished" hook.  Doing the copy here (rather
+# than in the Makefile) means it happens inside sphinx-build and therefore
+# works identically under "make" and on Read the Docs.
+
+def _copy_llm_artifacts(app, exception):
+    import shutil
+
+    if exception is not None or app.builder.name != "html":
+        return
+
+    # The generator writes the staging tree to <builddir>/llms-build, where
+    # <builddir> is the docs build directory.  The Makefile html recipe exports
+    # OMPI_LLM_BUILDDIR so we resolve it explicitly even in an out-of-tree
+    # (VPATH) build where the build dir differs from the source dir.  Fall back
+    # to app.confdir, which equals the build dir under both "make" (the recipe
+    # copies conf.py into builddir and runs sphinx-build there) and Read the
+    # Docs (sphinx-build runs in the source dir, where the generator also ran).
+    builddir = os.environ.get("OMPI_LLM_BUILDDIR", app.confdir)
+    staging = os.path.join(builddir, "llms-build")
+    src_tree = os.path.join(staging, "llms")
+    if not os.path.isdir(src_tree):
+        # Generator was not run (e.g., a bare sphinx-build); nothing to publish.
+        return
+
+    dst_tree = os.path.join(app.outdir, "llms")
+    if os.path.isdir(dst_tree):
+        shutil.rmtree(dst_tree)
+    shutil.copytree(src_tree, dst_tree)
+
+    src_txt = os.path.join(staging, "llms.txt")
+    if os.path.isfile(src_txt):
+        shutil.copy2(src_txt, os.path.join(app.outdir, "llms.txt"))
+
+
+def setup(app):
+    app.connect("build-finished", _copy_llm_artifacts)

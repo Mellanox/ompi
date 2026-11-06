@@ -11,6 +11,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -20,7 +21,9 @@
 #include "ompi/mca/osc/osc.h"
 #include "ompi/mca/osc/base/base.h"
 #include "ompi/mca/osc/base/osc_base_obj_convert.h"
+#include "ompi/runtime/params.h"
 #include "opal/mca/common/ucx/common_ucx.h"
+#include "opal/mca/pmix/pmix-internal.h"
 
 #include "osc_ucx.h"
 #include "osc_ucx_request.h"
@@ -81,6 +84,7 @@ ompi_osc_ucx_component_t mca_osc_ucx_component = {
     .wpool                  = NULL,
     .env_initialized        = false,
     .priority_is_set        = false,
+    .support_level          = OPAL_COMMON_UCX_SUPPORT_NONE,
     .num_modules            = 0,
     .acc_single_intrinsic   = false,
     .comm_world_size        = 0,
@@ -293,16 +297,20 @@ static int component_init(bool enable_progress_threads, bool enable_mpi_threads)
     mca_osc_ucx_component.enable_mpi_threads = enable_mpi_threads;
     mca_osc_ucx_component.wpool = opal_common_ucx_wpool_allocate();
     mca_osc_ucx_component.priority_is_set = false;
+    mca_osc_ucx_component.support_level = OPAL_COMMON_UCX_SUPPORT_NONE;
 
     return OMPI_SUCCESS;
 }
 
-static int component_set_priority(void) {
+static int component_set_priority(int flavor) {
     int param, ret;
-    opal_common_ucx_support_level_t support_level = OPAL_COMMON_UCX_SUPPORT_NONE;
     mca_base_var_source_t param_source = MCA_BASE_VAR_SOURCE_DEFAULT;
 
     if (mca_osc_ucx_component.priority_is_set == true) {
+        if (OPAL_COMMON_UCX_SUPPORT_NONE == mca_osc_ucx_component.support_level
+            && MPI_WIN_FLAVOR_SHARED != flavor) {
+            return OMPI_ERR_NOT_AVAILABLE;
+        }
         return OMPI_SUCCESS;
     }
 
@@ -317,8 +325,10 @@ static int component_set_priority(void) {
         }
     }
 
-    support_level = opal_common_ucx_support_level(mca_osc_ucx_component.wpool->ucp_ctx);
-    if (OPAL_COMMON_UCX_SUPPORT_NONE == support_level) {
+    mca_osc_ucx_component.support_level =
+        opal_common_ucx_support_level(mca_osc_ucx_component.wpool->ucp_ctx);
+    if (OPAL_COMMON_UCX_SUPPORT_NONE == mca_osc_ucx_component.support_level
+        && MPI_WIN_FLAVOR_SHARED != flavor) {
         ucp_cleanup(mca_osc_ucx_component.wpool->ucp_ctx);
         mca_osc_ucx_component.wpool->ucp_ctx = NULL;
         return OMPI_ERR_NOT_AVAILABLE;
@@ -334,7 +344,8 @@ static int component_set_priority(void) {
      * Lower priority if we have supported transports, but not supported devices.
      */
     if(MCA_BASE_VAR_SOURCE_DEFAULT == param_source) {
-        mca_osc_ucx_component.priority = (support_level == OPAL_COMMON_UCX_SUPPORT_DEVICE) ?
+        mca_osc_ucx_component.priority =
+            (mca_osc_ucx_component.support_level == OPAL_COMMON_UCX_SUPPORT_DEVICE) ?
                     mca_osc_ucx_component.priority : 9;
     }
     OSC_UCX_VERBOSE(2, "returning priority %d", mca_osc_ucx_component.priority);
@@ -344,7 +355,15 @@ static int component_set_priority(void) {
     return OMPI_SUCCESS;
 }
 
-static int component_finalize(void) {
+static void component_close_eps_and_fence(void)
+{
+    volatile int fenced = 0;
+    int ret;
+
+    /* drain pending winfo flushes; in MT mode also close the winfo endpoints */
+    if (mca_osc_ucx_component.env_initialized) {
+        opal_common_ucx_wpool_close_eps(mca_osc_ucx_component.wpool);
+    }
 
     if (!opal_common_ucx_thread_enabled) {
         int i;
@@ -356,7 +375,39 @@ static int component_finalize(void) {
             }
         }
         free(mca_osc_ucx_component.endpoints);
+        mca_osc_ucx_component.endpoints = NULL;
+        mca_osc_ucx_component.comm_world_size = 0;
     }
+
+    if (ompi_async_mpi_finalize) {
+        return;
+    }
+
+    /* peers must be done flushing to us before we destroy our workers */
+    OSC_UCX_VERBOSE(1, "endpoints closed, entering finalize barrier");
+    ret = opal_common_ucx_mca_pmix_fence_nb((int *) &fenced);
+    if (PMIX_SUCCESS != ret) {
+        OSC_UCX_VERBOSE(1, "finalize barrier failed: %s", PMIx_Error_string(ret));
+        return;
+    }
+
+    /* opal_progress() is not safe this late in finalize */
+    if (mca_osc_ucx_component.env_initialized) {
+        while (!fenced) {
+            opal_common_ucx_wpool_progress(mca_osc_ucx_component.wpool);
+        }
+    } else {
+        while (!fenced) {
+            usleep(1);
+        }
+    }
+
+    OSC_UCX_VERBOSE(1, "finalize barrier done, destroying workers");
+}
+
+static int component_finalize(void) {
+    component_close_eps_and_fence();
+
     opal_common_ucx_mca_deregister();
     if (mca_osc_ucx_component.env_initialized) {
         opal_common_ucx_wpool_finalize(mca_osc_ucx_component.wpool);
@@ -372,13 +423,10 @@ static int component_finalize(void) {
 
 static int component_query(struct ompi_win_t *win, void **base, size_t size, ptrdiff_t disp_unit,
                            struct ompi_communicator_t *comm, struct opal_info_t *info, int flavor) {
-    int ret;
-    if (mca_osc_ucx_component.priority_is_set == false) {
-        ret = component_set_priority();
-        if (OMPI_SUCCESS != ret) {
-            OSC_UCX_ERROR("OSC UCX component priority set inside component query failed \n ");
-            return ret;
-        }
+    int ret = component_set_priority(flavor);
+    if (OMPI_SUCCESS != ret) {
+        OSC_UCX_VERBOSE(10, "OSC UCX not available (component_set_priority returned %d)", ret);
+        return ret;
     }
     return mca_osc_ucx_component.priority;
 }
@@ -577,12 +625,10 @@ static int component_select(struct ompi_win_t *win, void **base, size_t size, pt
          * we don't want to initialize in the component_init()
          */
 
-        if (mca_osc_ucx_component.priority_is_set == false) {
-            ret = component_set_priority();
-            if (OMPI_SUCCESS != ret) {
-                OSC_UCX_ERROR("OSC UCX component priority set inside component select failed \n ");
-                return ret;
-            }
+        ret = component_set_priority(flavor);
+        if (OMPI_SUCCESS != ret) {
+            OSC_UCX_VERBOSE(10, "OSC UCX not available (component_set_priority returned %d)", ret);
+            return ret;
         }
 
         OBJ_CONSTRUCT(&mca_osc_ucx_component.requests, opal_free_list_t);

@@ -8,8 +8,7 @@ Although it should probably be assumed, you'll need a C compiler that
 supports C11.
 
 You'll also need a Fortran compiler if you want to build the Fortran
-MPI bindings (the more recent the Fortran compiler, the better), and a
-Java compiler if you want to build the (unofficial) Java MPI bindings.
+MPI bindings (the more recent the Fortran compiler, the better).
 
 GNU Autotools
 -------------
@@ -68,10 +67,13 @@ the Open MPI build, such as (but not limited to):
 
   * Building the Open MPI documentation and man pages
 
+  * Running the MPI ABI tests (optional)
+
 All of these are necessary when building from a Git clone.  Most of
 these can be accomplished with core Python; only building the full
-Open MPI documentation and man pages requires additional Python
-packages (:ref:`see below <developers-requirements-sphinx-label>`).
+Open MPI documentation, man pages, and MPI ABI checking tools requires
+additional Python packages (:ref:`see below
+<developers-requirements-sphinx-label>`).
 
 Perl
 ----
@@ -100,13 +102,10 @@ all flavors of lex and doing more interesting work on Open MPI, we
 greatly prefer the latter.
 
 Note that no testing has been performed to see what the minimum
-version of Flex is required by Open MPI.  We suggest that you use
-v2.5.35 at the earliest.
-
-For now, Open MPI will allow developer builds with Flex |flex_min_version|.  This
-is primarily motivated by the fact that RedHat/CentOS 5 ships with
-Flex 2.5.4.  It is likely that someday Open MPI developer builds will
-require Flex version >=2.5.35.
+version of Flex is required by Open MPI.  The Flex-generated sources
+in official distribution tarballs are made with Flex
+|flex_dist_version|; we suggest that you use a similarly recent
+version.
 
 Note that the ``flex``-generated code generates some compiler warnings
 on some platforms, but the warnings do not seem to be consistent or
@@ -121,8 +120,8 @@ MacPorts on MacOS), see `the Flex Github repository
 
 .. _developers-requirements-sphinx-label:
 
-Sphinx (and therefore Python)
------------------------------
+Python packages (including Sphinx)
+----------------------------------
 
 `Sphinx <https://www.sphinx-doc.org/>`_ is a Python-based tool used to
 generate both the HTML version of the documentation (that you are
@@ -139,6 +138,12 @@ MPI's Git repository; only the ReStructred Text source code of the
 documentation is in the Git repository.  Hence, if you are building
 Open MPI from a Git clone, you will need Sphinx (and some Python
 modules) in order to build the HTML documentation and man pages.
+
+These Python modules |mdash| together with the packages needed by Open
+MPI's other developer Python tooling (e.g., the MPI ABI test suite)
+|mdash| are consolidated into a single top-level ``requirements.txt``
+file, so a single installation provides all the Python packages that
+Open MPI developers need.
 
 .. important:: Most systems do not have Sphinx and/or the required
                Python modules installed by default.  :ref:`See the

@@ -3,11 +3,13 @@
 # Copyright (c) 2017      The University of Tennessee and The University
 #                         of Tennessee Research Foundation.  All rights
 #                         reserved.
+# Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 # MCA_ompi_common_monitoring_CONFIG([action-if-can-compile],
@@ -17,8 +19,8 @@ AC_DEFUN([MCA_ompi_common_monitoring_CONFIG],[
     AC_CONFIG_FILES([ompi/mca/common/monitoring/Makefile])
 
     m4_ifdef([project_ompi],
-             [AC_CONFIG_LINKS(test/monitoring/profile2mat.pl:ompi/mca/common/monitoring/profile2mat.pl
-                              test/monitoring/aggregate_profile.pl:ompi/mca/common/monitoring/aggregate_profile.pl)])
+             [AC_CONFIG_LINKS(ompi/test/monitoring/profile2mat.pl:ompi/mca/common/monitoring/profile2mat.pl
+                              ompi/test/monitoring/aggregate_profile.pl:ompi/mca/common/monitoring/aggregate_profile.pl)])
 
 
     [$1]

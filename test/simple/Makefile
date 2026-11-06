@@ -1,11 +1,14 @@
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 PROGS = mpi_no_op mpi_barrier hello hello_nodename abort multi_abort comm_abort initial_errh simple_spawn \
 		concurrent_spawn spawn_multiple mpi_spin delayed_abort loop_spawn loop_child \
 		bad_exit bad_arg pubsub hello_barrier segv accept connect hello_output hello_show_help \
 		crisscross read_write ziatest slave reduce-hang ziaprobe ziatest bcast_loop \
 		parallel_w8 parallel_w64 parallel_r8 parallel_r64 sio sendrecv_blaster early_abort \
 		debugger singleton_client_server intercomm_create spawn_tree init-exit77 mpi_info \
-		info_spawn server client ring binding badcoll attach xlib \
-		no-disconnect nonzero interlib pinterlib add_host
+		info_spawn server client ring binding badcoll attach xlib ompio_file_info \
+		no-disconnect nonzero interlib pinterlib add_host \
+		buffer_attach_detach_f08 \
+		osc_ucx_bottom_accumulate
 
 all: $(PROGS)
 
@@ -22,6 +25,11 @@ xlib: xlib.c
 
 pinterlib: pinterlib.c
 	$(CC) $(CFLAGS) $(CFLAGS_INTERNAL) $^ -o $@ -lpmix
+
+# Fortran mpi_f08 test (no built-in .f90 rule)
+
+buffer_attach_detach_f08: buffer_attach_detach_f08.f90
+	$(FC) $(FCFLAGS) $^ -o $@
 
 CC = mpicc
 CFLAGS = -g --openmpi:linkall

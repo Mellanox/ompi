@@ -1,12 +1,13 @@
 /* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil -*- */
 /*
- * Copyright (c) 2019-2025 Bull SAS.  All rights reserved.
+ * Copyright (c) 2019-2026 Bull SAS.  All rights reserved.
  *
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 /**
  * @file pml_ubcl_iprobe.c
@@ -32,6 +33,7 @@ int mca_pml_ubcl_iprobe(int src, int tag, struct ompi_communicator_t *comm,
     OPAL_OUTPUT_VERBOSE((75, mca_pml_ubcl_component.output,
                         "UBCL_MODULE_IPROBE\n"));
     ubcl_status_t ubcl_status;
+    ubcl_error_t err;
     uint64_t cid;
     uint64_t rank;
 
@@ -45,10 +47,13 @@ int mca_pml_ubcl_iprobe(int src, int tag, struct ompi_communicator_t *comm,
     }
 
     cid = ompi_comm_get_local_cid(comm);
-    ubcl_cid_t ubcl_cid= mca_pml_ubcl_compute_ubcl_cid(tag, cid);
+    ubcl_cid_t ubcl_cid = mca_pml_ubcl_compute_ubcl_cid(tag, cid);
 
     /* Call the UBCL api for iprobe */
-    ubcl_iprobe(rank, tag, ubcl_cid, matched, &ubcl_status);
+    err = ubcl_iprobe(rank, tag, ubcl_cid, matched, &ubcl_status);
+    if (UBCL_SUCCESS != err) {
+        return ubcl_error_to_ompi(err);
+    }
     if (*matched) {
         mca_common_ubcl_status_to_ompi(status, ubcl_status, comm, src);
     }
@@ -78,6 +83,7 @@ int mca_pml_ubcl_improbe(int src, int tag, struct ompi_communicator_t *comm,
     OPAL_OUTPUT_VERBOSE((75, mca_pml_ubcl_component.output,
                         "UBCL_MODULE_IMPROBE\n"));
     ubcl_status_t ubcl_status;
+    ubcl_error_t err;
     uint64_t rank;
     uint64_t cid;
     if (OMPI_ANY_SOURCE == src) {
@@ -95,7 +101,10 @@ int mca_pml_ubcl_improbe(int src, int tag, struct ompi_communicator_t *comm,
     ubcl_message_t *ubcl_message;
 
     /* Call the UBCL api for improbe */
-    ubcl_improbe(rank, tag, ubcl_cid, matched, &ubcl_message, &ubcl_status);
+    err = ubcl_improbe(rank, tag, ubcl_cid, matched, &ubcl_message, &ubcl_status);
+    if (UBCL_SUCCESS != err) {
+        return ubcl_error_to_ompi(err);
+    }
     if (*matched) {
         mca_common_ubcl_status_to_ompi(status, ubcl_status, comm, src);
         *message = ompi_message_alloc();

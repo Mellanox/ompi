@@ -11,17 +11,18 @@
 #                         and Technology (RIST).  All rights reserved.
 # Copyright (c) 2016      IBM Corporation.  All rights reserved.
 # Copyright (c) 2017-2018 FUJITSU LIMITED.  All rights reserved.
-# Copyright (c) 2019-2022 Triad National Security, LLC. All rights
+# Copyright (c) 2019-2026 Triad National Security, LLC. All rights
 #                         reserved.
 # Copyright (c) 2020      Sandia National Laboratories. All rights reserved.
 # Copyright (c) 2022      IBM Corporation.  All rights reserved.
-# Copyright (c) 2025      Jeffrey M. Squyres.  All rights reserved.
+# Copyright (c) 2025-2026 Jeffrey M. Squyres.  All rights reserved.
 #
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 include $(top_srcdir)/Makefile.ompi-rules
@@ -438,13 +439,14 @@ if OMPI_FORTRAN_HAVE_TS
 gen_ts = --generate-ts-suffix
 endif
 
-api_f08_generated.F90: $(template_files)
+api_f08_generated.F90: $(template_files) $(OMPI_BINDINGS_GENERATOR)
 	$(OMPI_V_GEN) $(PYTHON) $(top_srcdir)/ompi/mpi/bindings/bindings.py \
 	    --builddir $(abs_top_builddir) \
 	    --srcdir $(abs_top_srcdir) \
 	    --output $(abs_builddir)/$@ \
 	    fortran \
 	    $(gen_ts) \
+	    --pympistd-dir $(abs_top_srcdir)/3rd-party/pympistandard \
 	    code \
 	    --lang fortran \
 	    --prototype-files $(template_files)
@@ -453,6 +455,27 @@ EXTRA_DIST = $(prototype_files)
 
 # Delete generated file on maintainer-clean
 MAINTAINERCLEANFILES = api_f08_generated.F90
+if OPAL_DEVEL_BUILD
+CLEANFILES += api_f08_generated.F90
+endif
+
+###########################################################################
+
+# Validate that the mpi_f08 interfaces -- both the generated
+# (api_f08_generated.F90) and the hand-written (*_f08.F90) ones -- use the
+# parameter names, types, and intents mandated by the MPI standard, as
+# provided by the pympistandard submodule.  Run during "make check"; fails
+# if any mpi_f08 interface drifts from the standard.  The hand-written
+# sources live in $(srcdir); api_f08_generated.F90 is in the build directory
+# (built by "all", on which "check" depends).
+f08_name_check_handwritten = $(filter-out api_f08_generated.F90,$(mpi_api_files))
+
+check-local:
+	@$(PYTHON) $(top_srcdir)/ompi/mpi/bindings/check_fortran_param_names.py \
+	    --label "mpi_f08 bindings (generated + hand-written)" \
+	    --lang f08 \
+	    --pympistd-dir $(abs_top_srcdir)/3rd-party/pympistandard \
+	    api_f08_generated.F90 $(f08_name_check_handwritten:%=$(srcdir)/%)
 
 ###########################################################################
 

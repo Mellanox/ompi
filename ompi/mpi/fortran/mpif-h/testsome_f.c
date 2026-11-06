@@ -12,11 +12,13 @@
  * Copyright (c) 2006-2012 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -27,7 +29,7 @@
 #include "ompi/communicator/communicator.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_TESTSOME = ompi_testsome_f
 #pragma weak pmpi_testsome = ompi_testsome_f
 #pragma weak pmpi_testsome_ = ompi_testsome_f
@@ -40,13 +42,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_TESTSOME,
                            pmpi_testsome,
                            pmpi_testsome_,
                            pmpi_testsome__,
-                           pompi_testsome_f,
+                           ompi_testsome_f,
                            (MPI_Fint *incount, MPI_Fint *array_of_requests, MPI_Fint *outcount, MPI_Fint *array_of_indices, MPI_Fint *array_of_statuses, MPI_Fint *ierr),
                            (incount, array_of_requests, outcount, array_of_indices, array_of_statuses, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_TESTSOME = ompi_testsome_f
 #pragma weak mpi_testsome = ompi_testsome_f
 #pragma weak mpi_testsome_ = ompi_testsome_f
@@ -55,17 +57,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_TESTSOME,
 #pragma weak MPI_Testsome_f = ompi_testsome_f
 #pragma weak MPI_Testsome_f08 = ompi_testsome_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_TESTSOME,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_TESTSOME,
                            mpi_testsome,
                            mpi_testsome_,
                            mpi_testsome__,
                            ompi_testsome_f,
                            (MPI_Fint *incount, MPI_Fint *array_of_requests, MPI_Fint *outcount, MPI_Fint *array_of_indices, MPI_Fint *array_of_statuses, MPI_Fint *ierr),
                            (incount, array_of_requests, outcount, array_of_indices, array_of_statuses, ierr) )
-#else
-#define ompi_testsome_f pompi_testsome_f
-#endif
 #endif
 
 
@@ -112,24 +110,28 @@ void ompi_testsome_f(MPI_Fint *incount, MPI_Fint *array_of_requests,
                           c_status);
     if (NULL != ierr) *ierr = OMPI_INT_2_FINT(c_ierr);
 
-    OMPI_SINGLE_INT_2_FINT(outcount);
-    OMPI_ARRAY_INT_2_FINT(array_of_indices, *incount);
-
-    if (MPI_SUCCESS == c_ierr) {
+    if (OMPI_FORTRAN_COMPLETION_OUTPUTS_VALID(c_ierr)) {
+        OMPI_SINGLE_INT_2_FINT(outcount);
         if (MPI_UNDEFINED != OMPI_FINT_2_INT(*outcount)) {
+            OMPI_ARRAY_INT_2_FINT(array_of_indices, *outcount);
+
             for (i = 0; i < OMPI_FINT_2_INT(*outcount); ++i) {
                 array_of_requests[OMPI_INT_2_FINT(array_of_indices[i])] =
                     c_req[OMPI_INT_2_FINT(array_of_indices[i])]->req_f_to_c_index;
                 ++array_of_indices[i];
             }
-        }
-        if (!OMPI_IS_FORTRAN_STATUSES_IGNORE(array_of_statuses)) {
-            for (i = 0; i < OMPI_FINT_2_INT(*outcount); ++i) {
-                if (!OMPI_IS_FORTRAN_STATUS_IGNORE(&array_of_statuses[i])) {
-                    PMPI_Status_c2f(&c_status[i], &array_of_statuses[i * (sizeof(MPI_Status) / sizeof(int))]);
+            if (!OMPI_IS_FORTRAN_STATUSES_IGNORE(array_of_statuses)) {
+                for (i = 0; i < OMPI_FINT_2_INT(*outcount); ++i) {
+                    if (!OMPI_IS_FORTRAN_STATUS_IGNORE(&array_of_statuses[i])) {
+                        PMPI_Status_c2f(&c_status[i], &array_of_statuses[i * (sizeof(MPI_Status) / sizeof(int))]);
+                    }
                 }
             }
+        } else {
+            OMPI_ARRAY_FINT_2_INT_CLEANUP(array_of_indices);
         }
+    } else {
+        OMPI_ARRAY_FINT_2_INT_CLEANUP(array_of_indices);
     }
     free(c_req);
 }

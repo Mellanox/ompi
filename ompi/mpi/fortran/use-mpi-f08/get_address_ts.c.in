@@ -14,14 +14,16 @@
  *                         and Technology (RIST).  All rights reserved.
  * Copyright (c) 2024      Triad National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
-PROTOTYPE VOID get_address(BUFFER_ASYNC x, AINT address)
+PROTOTYPE VOID get_address(BUFFER_ASYNC x, AINT_OUT address)
 {
     int c_ierr;
     MPI_Aint c_address;

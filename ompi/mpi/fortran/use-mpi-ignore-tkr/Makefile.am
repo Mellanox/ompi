@@ -8,13 +8,14 @@
 # Copyright (c) 2018      FUJITSU LIMITED.  All rights reserved.
 # Copyright (c) 2022      IBM Corporation.  All rights reserved.
 # Copyright (c) 2025      Jeffrey M. Squyres.  All rights reserved.
-# Copyright (c) 2025      Triad National Security, LLC. All rights
+# Copyright (c) 2025-2026 Triad National Security, LLC. All rights
 #                         reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 include $(top_srcdir)/Makefile.ompi-rules
@@ -77,6 +78,28 @@ nodist_lib@OMPI_LIBMPI_NAME@_usempi_ignore_tkr_la_SOURCES += \
         mpi-ignore-tkr-sizeof.f90
 endif
 
+api_f90_generated_libs =
+if OMPI_FORTRAN_HAVE_TS
+noinst_LTLIBRARIES = \
+        libusempi_ignore_tkr_api.la \
+        libusempi_ignore_tkr_api_profile.la
+
+libusempi_ignore_tkr_api_la_SOURCES = api_f90_generated.F90
+libusempi_ignore_tkr_api_la_FCFLAGS = \
+        $(AM_FCFLAGS) \
+        -DOMPI_BUILD_MPI_PROFILING=0
+
+libusempi_ignore_tkr_api_profile_la_SOURCES = api_f90_generated.F90
+libusempi_ignore_tkr_api_profile_la_FCFLAGS = \
+        $(AM_FCFLAGS) \
+        -DOMPI_BUILD_MPI_PROFILING=1
+
+api_f90_generated_libs += \
+        libusempi_ignore_tkr_api.la \
+        libusempi_ignore_tkr_api_profile.la \
+        base/libusempi_ignore_tkr_ccode.la
+endif
+
 libusempi_internal_modules =
 if OMPI_FORTRAN_HAVE_TYPE_MPI_STATUS
 libusempi_internal_modules += $(top_builddir)/ompi/mpi/fortran/use-mpi/libusempi_internal_modules.la
@@ -87,8 +110,11 @@ endif
 # directly (pulling it in indirectly via libmpi.la does not work on
 # all platforms).
 lib@OMPI_LIBMPI_NAME@_usempi_ignore_tkr_la_LIBADD = \
+        $(api_f90_generated_libs) \
         $(libusempi_internal_modules) \
+        $(top_builddir)/ompi/lib@OMPI_LIBMPI_NAME@.la \
         $(OMPI_TOP_BUILDDIR)/opal/lib@OPAL_LIB_NAME@.la
+EXTRA_lib@OMPI_LIBMPI_NAME@_usempi_ignore_tkr_la_DEPENDENCIES = $(api_f90_generated_libs)
 lib@OMPI_LIBMPI_NAME@_usempi_ignore_tkr_la_LDFLAGS = \
         -version-info $(libmpi_usempi_ignore_tkr_so_version) \
         $(OMPI_FORTRAN_EXTRA_SHARED_LIBRARY_FLAGS)
@@ -141,16 +167,43 @@ if OMPI_FORTRAN_HAVE_TS
 gen_ts = --generate-ts-suffix
 endif
 
-mpi-ignore-tkr-interfaces-generated.h: $(template_files)
+mpi-ignore-tkr-interfaces-generated.h: $(template_files) $(OMPI_BINDINGS_GENERATOR)
 	$(OMPI_V_GEN) $(PYTHON) $(top_srcdir)/ompi/mpi/bindings/bindings.py \
 	    --builddir $(abs_top_builddir) \
 	    --srcdir $(abs_top_srcdir) \
 	    --output $(abs_builddir)/$@ \
 	    fortran \
 	    $(gen_ts) \
+        --pympistd-dir $(abs_top_srcdir)/3rd-party/pympistandard \
 	    --fort-std f90 \
 	    interface \
 	    --prototype-files $(template_files)
+
+api_f90_generated.F90: $(template_files) $(OMPI_BINDINGS_GENERATOR)
+	$(OMPI_V_GEN) $(PYTHON) $(top_srcdir)/ompi/mpi/bindings/bindings.py \
+	    --builddir $(abs_top_builddir) \
+	    --srcdir $(abs_top_srcdir) \
+	    --output $(abs_builddir)/$@ \
+	    fortran \
+	    $(gen_ts) \
+        --pympistd-dir $(abs_top_srcdir)/3rd-party/pympistandard \
+	    --fort-std f90 \
+	    code \
+	    --lang fortran \
+	    --prototype-files $(template_files)
+
+# Analogous checks to mpi_f08:
+# Verify parameter names and types against pympistandard.
+check-local:
+	@$(PYTHON) $(top_srcdir)/ompi/mpi/bindings/check_fortran_param_names.py \
+	    --label "mpi interface specifications and bindings" \
+	    --lang f90 \
+	    --pympistd-dir $(abs_top_srcdir)/3rd-party/pympistandard \
+	    mpi-ignore-tkr-interfaces-generated.h \
+	    mpi-ignore-tkr-interfaces.h \
+	    mpi-ignore-tkr-file-interfaces.h \
+	    mpi-ignore-tkr-removed-interfaces.h \
+	    api_f90_generated.F90
 
 #
 # Clean up generated and module files
@@ -159,7 +212,14 @@ mpi-ignore-tkr-interfaces-generated.h: $(template_files)
 CLEANFILES += mpi-ignore-tkr-sizeof.h mpi-ignore-tkr-sizeof.f90
 MOSTLYCLEANFILES = *.mod
 CLEANFILES += *.i90
-MAINTAINERCLEANFILES = mpi-ignore-tkr-interfaces-generated.h
+MAINTAINERCLEANFILES = \
+        mpi-ignore-tkr-interfaces-generated.h \
+        api_f90_generated.F90
+if OPAL_DEVEL_BUILD
+CLEANFILES += \
+        mpi-ignore-tkr-interfaces-generated.h \
+        api_f90_generated.F90
+endif
 
 # Install the generated .mod files.  Unfortunately, each F90 compiler
 # may generate different filenames, so we have to use a glob.  :-(

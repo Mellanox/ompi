@@ -15,6 +15,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -22,7 +23,7 @@
 #include "ompi/mpi/fortran/mpif-h/bindings.h"
 #include "ompi/mpi/fortran/base/fint_2_int.h"
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_TYPE_NULL_COPY_FN   = ompi_type_null_copy_fn_f
 #pragma weak mpi_type_null_copy_fn   = ompi_type_null_copy_fn_f
 #pragma weak mpi_type_null_copy_fn_  = ompi_type_null_copy_fn_f

@@ -13,11 +13,13 @@
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2019 IBM Corporation. All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -25,7 +27,7 @@
 #include "ompi/mpi/fortran/mpif-h/bindings.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_CART_MAP = ompi_cart_map_f
 #pragma weak pmpi_cart_map = ompi_cart_map_f
 #pragma weak pmpi_cart_map_ = ompi_cart_map_f
@@ -38,13 +40,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_CART_MAP,
                            pmpi_cart_map,
                            pmpi_cart_map_,
                            pmpi_cart_map__,
-                           pompi_cart_map_f,
+                           ompi_cart_map_f,
                            (MPI_Fint *comm, MPI_Fint *ndims, MPI_Fint *dims, ompi_fortran_logical_t *periods, MPI_Fint *newrank, MPI_Fint *ierr),
                            (comm, ndims, dims, periods, newrank, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_CART_MAP = ompi_cart_map_f
 #pragma weak mpi_cart_map = ompi_cart_map_f
 #pragma weak mpi_cart_map_ = ompi_cart_map_f
@@ -53,17 +55,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_CART_MAP,
 #pragma weak MPI_Cart_map_f = ompi_cart_map_f
 #pragma weak MPI_Cart_map_f08 = ompi_cart_map_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_CART_MAP,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_CART_MAP,
                            mpi_cart_map,
                            mpi_cart_map_,
                            mpi_cart_map__,
                            ompi_cart_map_f,
                            (MPI_Fint *comm, MPI_Fint *ndims, MPI_Fint *dims, ompi_fortran_logical_t *periods, MPI_Fint *newrank, MPI_Fint *ierr),
                            (comm, ndims, dims, periods, newrank, ierr) )
-#else
-#define ompi_cart_map_f pompi_cart_map_f
-#endif
 #endif
 
 
@@ -90,6 +88,8 @@ void ompi_cart_map_f(MPI_Fint *comm, MPI_Fint *ndims, MPI_Fint *dims,
     if (NULL != ierr) *ierr = OMPI_INT_2_FINT(c_ierr);
 
     OMPI_ARRAY_FINT_2_INT_CLEANUP(dims);
-    OMPI_ARRAY_LOGICAL_2_INT_CLEANUP(periods); 
-    OMPI_SINGLE_INT_2_FINT(newrank);
+    OMPI_ARRAY_LOGICAL_2_INT_CLEANUP(periods);
+    if (MPI_SUCCESS == c_ierr) {
+        OMPI_SINGLE_INT_2_FINT(newrank);
+    }
 }

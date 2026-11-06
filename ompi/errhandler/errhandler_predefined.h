@@ -17,6 +17,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #ifndef OMPI_ERRHANDLER_PREDEFINED_H
@@ -49,6 +50,8 @@ OMPI_DECLSPEC void ompi_mpi_errors_abort_comm_handler(struct ompi_communicator_t
 OMPI_DECLSPEC void ompi_mpi_errors_abort_file_handler(struct ompi_file_t **file,
 					    int *error_code, ...);
 OMPI_DECLSPEC void ompi_mpi_errors_abort_win_handler(struct ompi_win_t **win,
+					    int *error_code, ...);
+OMPI_DECLSPEC void ompi_mpi_errors_abort_instance_handler(struct ompi_instance_t **instance,
 					    int *error_code, ...);
 
 /**

@@ -15,6 +15,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "opal_config.h"
@@ -321,9 +322,6 @@ static int accelerator_cuda_check_addr(const void *addr, int *dev_id, uint64_t *
 
     *flags = 0;
 
-    is_vmm = accelerator_cuda_check_vmm(dbuf, &vmm_mem_type, &vmm_dev_id);
-    is_mpool_ptr = accelerator_cuda_check_mpool(dbuf, &mpool_mem_type, &mpool_dev_id);
-
 #if OPAL_CUDA_GET_ATTRIBUTES
     uint32_t is_managed = 0;
     /* With CUDA 7.0, we can get multiple attributes with a single call */
@@ -352,7 +350,29 @@ static int accelerator_cuda_check_addr(const void *addr, int *dev_id, uint64_t *
         } else {
             return OPAL_ERROR;
         }
-    } else if (CU_MEMORYTYPE_HOST == mem_type) {
+    }
+
+    if (CU_MEMORYTYPE_DEVICE == mem_type && NULL != mem_ctx) {
+        result = cuCtxGetCurrent(&ctx);
+        if (OPAL_UNLIKELY(NULL == ctx)) {
+            cuCtxSetCurrent(mem_ctx);
+        }
+        return 1;
+    }
+
+    /* cuPointerGetAttributes succeeds with mem_type left at 0 for a pointer
+     * CUDA recognizes but cannot classify, which is what a plain host
+     * allocation looks like once CUDA has been initialized.  Neither the VMM
+     * nor the mempool probe below can reclassify such a pointer, so return
+     * before paying for them. */
+    if (0 == mem_type) {
+        return 0;
+    }
+
+    is_vmm = accelerator_cuda_check_vmm(dbuf, &vmm_mem_type, &vmm_dev_id);
+    is_mpool_ptr = accelerator_cuda_check_mpool(dbuf, &mpool_mem_type, &mpool_dev_id);
+
+    if (CU_MEMORYTYPE_HOST == mem_type) {
         if (is_vmm && (vmm_mem_type == CU_MEMORYTYPE_DEVICE)) {
             mem_type = CU_MEMORYTYPE_DEVICE;
             *dev_id = vmm_dev_id;
@@ -363,9 +383,6 @@ static int accelerator_cuda_check_addr(const void *addr, int *dev_id, uint64_t *
             /* Host memory, nothing to do here */
             return 0;
         }
-    } else if (0 == mem_type) {
-        /* This can happen when CUDA is initialized but dbuf is not valid CUDA pointer */
-        return 0;
     } else {
         if (is_vmm) {
             *dev_id = vmm_dev_id;
@@ -385,7 +402,12 @@ static int accelerator_cuda_check_addr(const void *addr, int *dev_id, uint64_t *
         } else {
             return OPAL_ERROR;
         }
-    } else if (CU_MEMORYTYPE_HOST == mem_type) {
+    }
+
+    is_vmm = accelerator_cuda_check_vmm(dbuf, &vmm_mem_type, &vmm_dev_id);
+    is_mpool_ptr = accelerator_cuda_check_mpool(dbuf, &mpool_mem_type, &mpool_dev_id);
+
+    if (CU_MEMORYTYPE_HOST == mem_type) {
         if (is_vmm && (vmm_mem_type == CU_MEMORYTYPE_DEVICE)) {
             mem_type = CU_MEMORYTYPE_DEVICE;
             *dev_id = vmm_dev_id;

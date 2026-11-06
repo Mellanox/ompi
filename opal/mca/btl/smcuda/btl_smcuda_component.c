@@ -14,7 +14,7 @@
  * Copyright (c) 2009-2010 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2010-2016 Los Alamos National Security, LLC. All rights
  *                         reserved.
- * Copyright (c) 2011-2015 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2011-2026 NVIDIA Corporation.  All rights reserved.
  * Copyright (c) 2014      Intel, Inc. All rights reserved.
  * Copyright (c) 2018-2022 Amazon.com, Inc. or its affiliates.  All Rights reserved.
  * Copyright (c) 2022      IBM Corporation.  All rights reserved.
@@ -27,6 +27,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 #include "opal_config.h"
 #include <errno.h>
@@ -52,6 +53,7 @@
 #include "opal/mca/hwloc/base/base.h"
 #include "opal/mca/shmem/base/base.h"
 #include "opal/mca/shmem/shmem.h"
+#include "opal/util/argv.h"
 #include "opal/util/bit_ops.h"
 #include "opal/util/output.h"
 #include "opal/util/printf.h"
@@ -145,6 +147,18 @@ static int mca_btl_smcuda_component_verify(void)
 
 static int smcuda_register(void)
 {
+    mca_btl_smcuda_component.smcuda_enable = -1;
+    (void) mca_base_component_var_register(&mca_btl_smcuda_component.super.btl_version,
+                                           "enable",
+                                           "Enable/Disable the smcuda BTL component: "
+                                           "positive = always enable, 0 = always disable, "
+                                           "negative = enable only when explicitly requested "
+                                           "via --mca btl smcuda (default)",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0,
+                                           MCA_BASE_VAR_FLAG_SETTABLE, OPAL_INFO_LVL_1,
+                                           MCA_BASE_VAR_SCOPE_ALL,
+                                           &mca_btl_smcuda_component.smcuda_enable);
+
     /* register SM component parameters */
     mca_btl_smcuda_component.mpool_min_size = 134217728;
     (void) mca_base_component_var_register(&mca_btl_smcuda_component.super.btl_version, "min_size",
@@ -226,6 +240,11 @@ static int smcuda_register(void)
 
     /* Call the BTL based to register its MCA params */
     mca_btl_base_param_register(&mca_btl_smcuda_component.super.btl_version, &mca_btl_smcuda.super);
+    /* After mca_btl_base_param_register() so btl_smcuda_flags cannot strip
+     * this bit. add_procs() carries a barrier across every node-local rank
+     * and numbers the segment from the whole local set, neither of which a
+     * peer-at-a-time wire-up can provide. */
+    mca_btl_smcuda.super.btl_flags |= MCA_BTL_FLAGS_REQUIRE_SYNC_INIT;
     /* If user has not set the value, then set to the defalt */
     if (0 == mca_btl_smcuda.super.btl_accelerator_max_send_size) {
         mca_btl_smcuda.super.btl_accelerator_max_send_size = 128 * 1024;
@@ -240,6 +259,26 @@ static int smcuda_register(void)
     return mca_btl_smcuda_component_verify();
 }
 
+static bool mca_btl_smcuda_explicitly_requested(void)
+{
+    const char *selection = opal_btl_base_framework.framework_selection;
+    char **names;
+    bool requested = false;
+    /* No list at all, or an exclusion list, is not an explicit request. */
+    if (NULL == selection || 0 == strlen(selection) || '^' == selection[0]) {
+        return false;
+    }
+    names = opal_argv_split(selection, ',');
+    for (int i = 0; NULL != names && NULL != names[i]; ++i) {
+        if (0 == strcmp(names[i], "smcuda")) {
+            requested = true;
+            break;
+        }
+    }
+    opal_argv_free(names);
+    return requested;
+}
+
 /*
  *  Called by MCA framework to open the component, registers
  *  component parameters.
@@ -247,6 +286,12 @@ static int smcuda_register(void)
 
 static int mca_btl_smcuda_component_open(void)
 {
+    if (0 == mca_btl_smcuda_component.smcuda_enable
+        || (0 > mca_btl_smcuda_component.smcuda_enable
+            && !mca_btl_smcuda_explicitly_requested())) {
+        return OPAL_ERR_NOT_AVAILABLE;
+    }
+
     if (OPAL_SUCCESS != mca_btl_smcuda_component_verify()) {
         return OPAL_ERROR;
     }
@@ -993,6 +1038,12 @@ int mca_btl_smcuda_component_progress(void)
     int my_smp_rank = mca_btl_smcuda_component.my_smp_rank;
     int peer_smp_rank, j, rc = 0, nevents = 0;
 
+    /* Progress is registered from add_procs. Lazy wire-up can poll
+     * before first_time_init has filled the peer/FIFO tables. */
+    if (0 > my_smp_rank || NULL == mca_btl_smcuda_component.fifo) {
+        return 0;
+    }
+
     /* first, deal with any pending sends */
     /* This check should be fast since we only need to check one variable. */
     if (0 < mca_btl_smcuda_component.num_pending_sends) {
@@ -1005,6 +1056,9 @@ int mca_btl_smcuda_component_progress(void)
             if (peer_smp_rank == my_smp_rank)
                 continue;
             endpoint = mca_btl_smcuda_component.sm_peers[peer_smp_rank];
+            if (NULL == endpoint) {
+                continue;
+            }
             if (0 < opal_list_get_size(&endpoint->pending_sends))
                 btl_smcuda_process_pending_sends(endpoint);
         }
@@ -1050,15 +1104,19 @@ int mca_btl_smcuda_component_progress(void)
             seg.seg_len = hdr->len;
 
             mca_btl_active_message_callback_t *reg = mca_btl_base_active_message_trigger + hdr->tag;
-            mca_btl_base_receive_descriptor_t recv_desc = {.endpoint = mca_btl_smcuda_component
-                                                                           .sm_peers[peer_smp_rank],
+            struct mca_btl_base_endpoint_t *peer_ep =
+                mca_btl_smcuda_component.sm_peers[peer_smp_rank];
+            if (NULL == peer_ep) {
+                break;
+            }
+            mca_btl_base_receive_descriptor_t recv_desc = {.endpoint = peer_ep,
                                                            .des_segments = &seg,
                                                            .des_segment_count = 1,
                                                            .tag = hdr->tag,
                                                            .cbdata = reg->cbdata};
             reg->cbfunc(&mca_btl_smcuda.super, &recv_desc);
             /* return the fragment */
-            MCA_BTL_SMCUDA_FIFO_WRITE(mca_btl_smcuda_component.sm_peers[peer_smp_rank], my_smp_rank,
+            MCA_BTL_SMCUDA_FIFO_WRITE(peer_ep, my_smp_rank,
                                       peer_smp_rank, hdr->frag, false, true, rc);
             (void)rc;
             break;

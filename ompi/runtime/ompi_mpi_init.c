@@ -26,15 +26,18 @@
  * Copyright (c) 2018      FUJITSU LIMITED.  All rights reserved.
  * Copyright (c) 2020      Amazon.com, Inc. or its affiliates.
  *                         All Rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2026 Nanook Consulting  All rights reserved.
  * Copyright (c) 2021-2022 Triad National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2025      Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2026      Jeffrey M. Squyres.  All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -72,8 +75,11 @@
 #include "ompi/constants.h"
 #include "ompi/mpi/fortran/base/constants.h"
 #include "ompi/runtime/mpiruntime.h"
+#include "ompi/instance/instance.h"
 #include "ompi/runtime/params.h"
+#include "ompi/runtime/ompi_modex.h"
 #include "ompi/communicator/communicator.h"
+#include "ompi/runtime/ompi_mpit_events.h"
 #include "ompi/info/info.h"
 #include "ompi/errhandler/errcode.h"
 #include "ompi/errhandler/errhandler.h"
@@ -102,6 +108,19 @@
 #include "ompi/mpiext/mpiext.h"
 #include "ompi/mca/hook/base/base.h"
 #include "ompi/util/timings.h"
+#include "opal/types.h"
+
+/* opal_count_t is the layer-safe backing type for MPI_Count: both are derived
+   from a single configure-computed value (OPAL_FIND_COUNT_TYPE), so OPAL code
+   can manipulate counts without referencing any MPI type.  Guarantee at build
+   time that the two stay the same width. */
+_Static_assert(sizeof(opal_count_t) == sizeof(MPI_Count),
+               "opal_count_t and MPI_Count must be the same size");
+/* opal_count_t must be signed: later code (e.g. the mca_base_event drop
+   accounting) saturates against OPAL_COUNT_MAX and relies on negative values
+   being representable / detectable. */
+_Static_assert((opal_count_t) -1 < 0,
+               "opal_count_t must be a signed type");
 
 /* newer versions of gcc have poisoned this deprecated feature */
 #ifdef HAVE___MALLOC_INITIALIZE_HOOK
@@ -129,8 +148,21 @@ opal_atomic_int32_t ompi_mpi_state = OMPI_MPI_STATE_NOT_INITIALIZED;
 volatile bool ompi_rte_initialized = false;
 
 bool ompi_mpi_thread_multiple = false;
-int ompi_mpi_thread_requested = MPI_THREAD_SINGLE;
+/* No level has been requested until MPI_INIT_THREAD names one.  Start at
+   MPI_UNDEFINED rather than MPI_THREAD_SINGLE so that "nobody asked" is
+   distinguishable from "somebody asked for SINGLE"; MPI_INFO_ENV reports
+   this field and must not invent a request that was never made. */
+int ompi_mpi_thread_requested = MPI_UNDEFINED;
 int ompi_mpi_thread_provided = MPI_THREAD_SINGLE;
+
+/* MPI_T process-wide thread state.  These live here in the lower
+   libopen_mpi layer (rather than in ompi/mpi/tool/mpit_common.c, which
+   is part of the upper libmpi layer) because the instance and
+   world-model init paths read them and cannot reference symbols in the
+   layer above.  MPI_T_init_thread()/MPI_T_finalize() in libmpi write
+   them under the instance lock. */
+volatile uint32_t ompi_mpit_init_count = 0;
+int ompi_mpit_thread_level = MPI_THREAD_SINGLE;
 
 opal_thread_t *ompi_mpi_main_thread = NULL;
 
@@ -316,8 +348,41 @@ void ompi_mpi_thread_level(int requested, int *provided)
      * provided > required. Finally, if the user requirement cannot be
      * satisfied, then the call will return in provided the highest
      * supported level.
+     *
+     * This establishes the World Model's thread level, and is called only
+     * from ompi_mpi_init().  These globals back MPI_QUERY_THREAD, which
+     * MPI 5.0 sec. 11.6.2 pins for the life of the process to "the level
+     * of thread support returned by the original call to
+     * MPI_INIT_THREAD" -- no other scope (MPI_T, sessions) may write
+     * them; each has its own pinned level.
      */
     ompi_mpi_thread_requested = requested;
+
+    /* If sessions are already active at a lower level, this process
+       cannot be safely upgraded to MPI_THREAD_MULTIPLE mid-flight (the
+       components those sessions selected were configured at the lower
+       level, and the process-wide flags cannot be changed without racing
+       their unlocked hot-path readers).  Grant MPI_THREAD_SERIALIZED
+       instead -- the coupling MPI 5.0 sec. 11.6.2 explicitly permits:
+       "the level of thread support returned from MPI_INIT_THREAD may be
+       similarly influenced by the requested level of thread support in
+       the prior call to MPI_SESSION_INIT".  We are called with the
+       instance lock held, which pins ompi_instance_count. */
+    if (MPI_THREAD_MULTIPLE == requested && !ompi_mpi_thread_multiple
+        && (0 != ompi_instance_count
+            || (0 != ompi_mpit_init_count
+                && MPI_THREAD_SINGLE != ompi_mpit_thread_level
+                && !opal_using_threads()))) {
+        /* Active sessions, or a tool epoch whose threads may be inside
+           unlocked MPI_T query routines and whose own init could not
+           flip the OPAL flags, make an upgrade unsafe.  Note this is NOT
+           the common tool pattern (MPI_T_init_thread() from a PMPI
+           wrapper before the application's MPI_Init_thread()): a tool at
+           SINGLE has no other threads, and a tool above SINGLE at a
+           quiescent init already flipped the OPAL flags, so MULTIPLE is
+           granted normally in both of those cases. */
+        requested = MPI_THREAD_SERIALIZED;
+    }
 
     ompi_mpi_thread_provided = *provided = requested;
 
@@ -325,16 +390,13 @@ void ompi_mpi_thread_level(int requested, int *provided)
         ompi_mpi_main_thread = opal_thread_get_self();
     }
 
-    ompi_mpi_thread_multiple = (ompi_mpi_thread_provided ==
-                                MPI_THREAD_MULTIPLE);
-}
-
-static void fence_release(pmix_status_t status, void *cbdata)
-{
-    volatile bool *active = (volatile bool*)cbdata;
-    OPAL_ACQUIRE_OBJECT(active);
-    *active = false;
-    OPAL_POST_OBJECT(active);
+    /* Ratchet only: a THREAD_MULTIPLE session may already have engaged
+       the process-wide threaded code paths, and a lower-level world
+       initialization must not disengage them. */
+    if (MPI_THREAD_MULTIPLE == ompi_mpi_thread_provided
+        && !ompi_mpi_thread_multiple) {
+        ompi_mpi_thread_multiple = true;
+    }
 }
 
 int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
@@ -345,10 +407,9 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
 #if OPAL_USING_INTERNAL_PMIX
     char *evar;
 #endif
-    volatile bool active;
-    bool background_fence = false;
-    pmix_info_t info[2];
+#if (OPAL_ENABLE_TIMING) || OPAL_ENABLE_FT_MPI
     pmix_status_t rc;
+#endif
     OMPI_TIMING_INIT(64);
 
     ompi_hook_base_mpi_init_top(argc, argv, requested, provided);
@@ -392,9 +453,25 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
     }
 #endif
 
+    /* Publish the world thread level (and ompi_mpi_main_thread) under
+       the instance lock: MPI_T_finalize() reads ompi_mpi_main_thread
+       under that lock, and must either see it not yet set (and leave it
+       alone because ompi_mpi_state is already INIT_STARTED) or see a
+       fully published value.
+
+       Hold the lock across the instance initialization as well (it is
+       recursive), so that the level decided above and the process-wide
+       thread-flag ratchet inside ompi_mpi_instance_init() happen in ONE
+       critical section.  Otherwise a concurrent MPI_Session_init() could
+       slip between the two acquisitions, become the first instance
+       without engaging the flags, and leave a THREAD_MULTIPLE world
+       running with its granted level already decided but the threaded
+       code paths never enabled. */
+    ompi_mpi_instance_lock ();
     ompi_mpi_thread_level(requested, provided);
 
     ret = ompi_mpi_instance_init (*provided, &ompi_mpi_info_null.info.super, MPI_ERRORS_ARE_FATAL, &ompi_mpi_instance_default, argc, argv);
+    ompi_mpi_instance_unlock ();
     if (OPAL_UNLIKELY(OMPI_SUCCESS != ret)) {
         error = "ompi_mpi_init: ompi_mpi_instance_init failed";
         goto error;
@@ -448,59 +525,33 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
     }
 #endif
 
-    if (!opal_process_info.is_singleton) {
-        if (opal_pmix_base_async_modex) {
-            /* if we are doing an async modex, but we are collecting all
-             * data, then execute the non-blocking modex in the background.
-             * All calls to modex_recv will be cached until the background
-             * modex completes. If collect_all_data is false, then we skip
-             * the fence completely and retrieve data on-demand from the
-             * source node.
-             */
-            if (opal_pmix_collect_all_data) {
-                /* execute the fence_nb in the background to collect
-                 * the data */
-                background_fence = true;
-                active = true;
-                OPAL_POST_OBJECT(&active);
-                PMIX_INFO_LOAD(&info[0], PMIX_COLLECT_DATA, &opal_pmix_collect_all_data, PMIX_BOOL);
-                if( PMIX_SUCCESS != (rc = PMIx_Fence_nb(NULL, 0, NULL, 0,
-                                                        fence_release,
-                                                        (void*)&active))) {
-                    ret = opal_pmix_convert_status(rc);
-                    error = "PMIx_Fence_nb() failed";
-                    goto error;
-                }
-            }
-        } else {
-            /* we want to do the modex - we block at this point, but we must
-             * do so in a manner that allows us to call opal_progress so our
-             * event library can be cycled as we have tied PMIx to that
-             * event base */
-            active = true;
-            OPAL_POST_OBJECT(&active);
-            PMIX_INFO_LOAD(&info[0], PMIX_COLLECT_DATA, &opal_pmix_collect_all_data, PMIX_BOOL);
-            rc = PMIx_Fence_nb(NULL, 0, info, 1, fence_release, (void*)&active);
-            if( PMIX_SUCCESS != rc) {
-                ret = opal_pmix_convert_status(rc);
-                error = "PMIx_Fence() failed";
-                goto error;
-            }
-            /* cannot just wait on thread as we need to call opal_progress */
-            OMPI_LAZY_WAIT_FOR_COMPLETION(active);
-        }
-    }
-
-    OMPI_TIMING_NEXT("modex");
+    /* The connection-info exchange runs in instance init. A second
+     * collecting fence here would wait for every peer blob and defeat
+     * lazy add_procs; only the world-model add_comm calls belong here.
+     *
+     * These are the only add_comm calls for the predefined communicators:
+     * instance init neither builds nor adds them, so the pair built by
+     * ompi_comm_init_mpi3() above is handed to the PML exactly once.  The
+     * BTLs have been able to deliver since instance init ran add_procs,
+     * so a fragment for MPI_COMM_WORLD may already have arrived; the PML
+     * holds anything it could not place for a communicator it had never
+     * seen, and add_comm() drains that queue here. */
 
     MCA_PML_CALL(add_comm(&ompi_mpi_comm_world.comm));
+    OMPI_COMM_SET_PML_ADDED(&ompi_mpi_comm_world.comm);
     MCA_PML_CALL(add_comm(&ompi_mpi_comm_self.comm));
+    OMPI_COMM_SET_PML_ADDED(&ompi_mpi_comm_self.comm);
 
 #if OPAL_ENABLE_FT_MPI
     /* initialize the fault tolerant infrastructure (revoke, detector,
      * propagator) */
     if( ompi_ftmpi_enabled ) {
         const char *evmethod;
+        /* None of what follows can be handed a peer whose connection info
+         * is still on its way (see ompi_mpi_register_params), and this is
+         * the last point where waiting for it is allowed. */
+        rc = ompi_modex_wait_if_needed();
+        if( OMPI_SUCCESS != rc ) return rc;
         rc = ompi_comm_rbcast_init();
         if( OMPI_SUCCESS != rc ) return rc;
         rc = ompi_comm_revoke_init();
@@ -532,29 +583,8 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
     /* Next timing measurement */
     OMPI_TIMING_NEXT("modex-barrier");
 
-    if (!opal_process_info.is_singleton) {
-        /* if we executed the above fence in the background, then
-         * we have to wait here for it to complete. However, there
-         * is no reason to do two barriers! */
-        if (background_fence) {
-            OMPI_LAZY_WAIT_FOR_COMPLETION(active);
-        } else if (!ompi_async_mpi_init) {
-            /* wait for everyone to reach this point - this is a hard
-             * barrier requirement at this time, though we hope to relax
-             * it at a later point */
-            bool flag = false;
-            active = true;
-            OPAL_POST_OBJECT(&active);
-            PMIX_INFO_LOAD(&info[0], PMIX_COLLECT_DATA, &flag, PMIX_BOOL);
-            if (PMIX_SUCCESS != (rc = PMIx_Fence_nb(NULL, 0, info, 1,
-                                                    fence_release, (void*)&active))) {
-                ret = opal_pmix_convert_status(rc);
-                error = "PMIx_Fence_nb() failed";
-                goto error;
-            }
-            OMPI_LAZY_WAIT_FOR_COMPLETION(active);
-        }
-    }
+    /* The non-collecting MPI_Init barrier is in instance init
+     * (ompi_async_mpi_init). Do not repeat it here. */
 
     /* check for timing request - get stop time and report elapsed
        time if so, then start the clock again */
@@ -585,13 +615,13 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
        function else), but before dpm.dyncom_init, since this function
        might require collective for the CID allocation. */
     if (OMPI_SUCCESS !=
-        (ret = mca_coll_base_comm_select(MPI_COMM_WORLD))) {
+        (ret = mca_coll_base_comm_select(MPI_COMM_WORLD, NULL, false))) {
         error = "mca_coll_base_comm_select(MPI_COMM_WORLD) failed";
         goto error;
     }
 
     if (OMPI_SUCCESS !=
-        (ret = mca_coll_base_comm_select(MPI_COMM_SELF))) {
+        (ret = mca_coll_base_comm_select(MPI_COMM_SELF, NULL, false))) {
         error = "mca_coll_base_comm_select(MPI_COMM_SELF) failed";
         goto error;
     }
@@ -637,6 +667,28 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided,
     OMPI_TIMING_FINALIZE;
 
     ompi_hook_base_mpi_init_bottom(argc, argv, requested, provided);
+
+    /* Raise the MPI_T initialization event for the world model now that init is
+       complete and MPI_COMM_WORLD exists, so the payload can carry this process'
+       rank and the world size (the session model raises its own initialization
+       event from ompi_mpi_instance_init(), with world_rank/size = -1).  No-op
+       when no tool is listening or the producer is disabled. */
+    if (NULL != ompi_event_initialization) {
+        /* The world model exposes no user-facing instance handle (MPI_Init
+           returns none), so instance_id is purely an internal correlation token
+           (init<->finalize) and is ABI-independent -- unlike the session model,
+           where instance_id is the MPI_Session handle and is ABI-gated. */
+        struct {
+            int32_t  model;
+            int32_t  thread_level;
+            int32_t  world_rank;
+            int32_t  world_size;
+            uint64_t instance_id;
+        } payload = {OMPI_T_MODEL_WORLD, (int32_t) *provided,
+                     ompi_comm_rank(MPI_COMM_WORLD), ompi_comm_size(MPI_COMM_WORLD),
+                     (uint64_t) (uintptr_t) ompi_mpi_instance_default};
+        mca_base_event_raise(ompi_event_initialization, NULL, &payload);
+    }
 
     return MPI_SUCCESS;
 }

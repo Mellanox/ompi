@@ -29,19 +29,6 @@ MPI API behaviors that can be used with ``configure``:
 
   :ref:`See the ULFM section <ulfm-label>` for more information.
 
-* ``--enable-mpi-java``:
-  Enable building of an **EXPERIMENTAL** Java MPI interface (disabled
-  by default).  You may also need to specify ``--with-jdk-dir``,
-  ``--with-jdk-bindir``, and/or ``--with-jdk-headers``.
-
-  .. warning:: Note that this Java interface is **INCOMPLETE**
-     (meaning: it does not support all MPI functionality) and **LIKELY
-     TO CHANGE**.  The Open MPI developers would very much like to
-     hear your feedback about this interface.
-
-  :ref:`See the Java section <open-mpi-java-label>` for many more
-  details.
-
 * ``--enable-mpi-fortran[=VALUE]``:
   By default, Open MPI will attempt to build all 3 Fortran bindings:
   ``mpif.h``, the ``mpi`` module, and the ``mpi_f08`` module.  The following
@@ -65,9 +52,46 @@ MPI API behaviors that can be used with ``configure``:
   Fortran bindings modulefiles.  By default, Open MPI will install
   Fortran modulefiles into ``$libdir``.
 
+* ``--enable-mpi-abi[=MODE]``:
+  Select which MPI ABIs Open MPI builds.  ``MODE`` is one of:
+
+  * ``both`` (the default): build both the traditional Open MPI ABI
+    (``libmpi``) and the MPI Forum standard ABI (``libmpi_abi``),
+    allowing applications to use either.  A bare ``--enable-mpi-abi``
+    (with no ``=MODE``) also selects ``both``.
+  * ``standard`` (or ``forum``): build **only** the MPI Forum standard
+    ABI.  This is "ABI-only" mode (see the limitations below).
+  * ``ompi``: build **only** the traditional Open MPI ABI; no
+    ``libmpi_abi`` is produced.
+
+  When the MPI Forum standard ABI is built, Open MPI installs
+  ``libmpi_abi``, the ``mpicc_abi`` convenience wrapper, and
+  ``ompi-forum-abi*`` pkg-config files.
+
+  .. warning:: **Limitations of ABI-only mode**
+               (``--enable-mpi-abi=standard``):
+
+               * **No Fortran bindings**: The MPI Forum standard
+                 currently only defines a C ABI. No Fortran compiler
+                 wrappers (``mpifort``, ``mpif77``, ``mpif90``) or
+                 bindings are available.
+               * **No OpenSHMEM support**: OpenSHMEM requires the
+                 traditional Open MPI ABI and is disabled in
+                 ABI-only mode.
+
+  .. note:: **Deprecated synonyms.**  The older boolean options are
+            still accepted (with a deprecation warning) but should be
+            replaced with ``--enable-mpi-abi=MODE``:
+
+            * ``--enable-standard-abi`` / ``--disable-standard-abi`` ---
+              formerly toggled the MPI Forum standard ABI.
+            * ``--disable-ompi-abi`` --- equivalent to
+              ``--enable-mpi-abi=standard``; required the standard ABI
+              to be enabled.
+
 * ``--enable-mpi-ext[=LIST]``:
   Enable Open MPI's non-portable API extensions.  ``LIST`` is a
-  comma-delmited list of extensions.  If no ``LIST`` is specified, all
+  comma-delimited list of extensions.  If no ``LIST`` is specified, all
   of the extensions are enabled.
 
   See the "Open MPI API Extensions" section for more details.

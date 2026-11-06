@@ -18,6 +18,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -25,7 +26,7 @@
 #include "ompi/mpi/fortran/mpif-h/bindings.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_REMOVE_ERROR_STRING = ompi_remove_error_string_f
 #pragma weak pmpi_remove_error_string = ompi_remove_error_string_f
 #pragma weak pmpi_remove_error_string_ = ompi_remove_error_string_f
@@ -38,13 +39,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_REMOVE_ERROR_STRING,
                            pmpi_remove_error_string,
                            pmpi_remove_error_string_,
                            pmpi_remove_error_string__,
-                           pompi_remove_error_string_f,
+                           ompi_remove_error_string_f,
                            (MPI_Fint *errorcode, MPI_Fint *ierr),
                            (errorcode, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_REMOVE_ERROR_STRING = ompi_remove_error_string_f
 #pragma weak mpi_remove_error_string = ompi_remove_error_string_f
 #pragma weak mpi_remove_error_string_ = ompi_remove_error_string_f
@@ -53,17 +54,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_REMOVE_ERROR_STRING,
 #pragma weak MPI_Remove_error_string_f = ompi_remove_error_string_f
 #pragma weak MPI_Remove_error_string_f08 = ompi_remove_error_string_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_REMOVE_ERROR_STRING,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_REMOVE_ERROR_STRING,
                            mpi_remove_error_string,
                            mpi_remove_error_string_,
                            mpi_remove_error_string__,
                            ompi_remove_error_string_f,
                            (MPI_Fint *errorcode, MPI_Fint *ierr),
                            (errorcode, ierr) )
-#else
-#define ompi_remove_error_string_f pompi_remove_error_string_f
-#endif
 #endif
 
 

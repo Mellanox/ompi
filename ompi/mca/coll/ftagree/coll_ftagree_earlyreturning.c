@@ -8,11 +8,13 @@
  * Copyright (c) 2022      IBM Corporation. All rights reserved
  *
  *
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -2116,6 +2118,7 @@ static void send_msg(ompi_communicator_t *comm,
     uint64_t my_seqnum;
     unsigned int to_send, sent;
     long unsigned int payload_size;
+    int eprc;
 
 #if defined(FTAGREE_DEBUG_FAILURE_INJECT)
     if( (double)rand() / (double)RAND_MAX < mca_coll_ftagree_rank_fault_proba ) {
@@ -2183,10 +2186,13 @@ static void send_msg(ompi_communicator_t *comm,
         peer = ompi_comm_peer_lookup(comm, dst);
     }
     assert(NULL != peer);
-    endpoint = mca_bml_base_get_endpoint(peer);
+    /* Runs from a btl callback as well as from the agreement itself, so
+     * it cannot block for a peer's connection info; one merely not
+     * connected yet is left to the result-request path, which retries. */
+    endpoint = mca_bml_base_get_endpoint(peer, &eprc);
     if(NULL == endpoint) {
       opal_output_verbose(5, ompi_ftmpi_output_handle,
-                             "%s ftagree:agreement (ERA) CANNOT send message [(%d.%d).%d, %s, %08x.%d.%d..] to %d/%s (no endpoint)\n",
+                             "%s ftagree:agreement (ERA) CANNOT send message [(%d.%d).%d, %s, %08x.%d.%d..] to %d/%s (%s)\n",
                              OMPI_NAME_PRINT(OMPI_PROC_MY_NAME),
                              agreement_id.ERAID_FIELDS.contextid,
                              agreement_id.ERAID_FIELDS.epoch,
@@ -2196,7 +2202,8 @@ static void send_msg(ompi_communicator_t *comm,
                              value->header.ret,
                              value->header.nb_new_dead,
                              dst,
-                             NULL != proc_name ? OMPI_NAME_PRINT(proc_name) : "(null)");
+                             NULL != proc_name ? OMPI_NAME_PRINT(proc_name) : "(null)",
+                             OMPI_ERR_NOT_READY == eprc ? "peer not connected yet" : "no endpoint");
       return; /* bail out: the algorithm should reconnect when the failed proc is detected */
     }
     bml_btl = mca_bml_base_btl_array_get_index(&endpoint->btl_eager, 0);
@@ -2956,6 +2963,15 @@ int mca_coll_ftagree_era_finalize(void)
                          "%s ftagree:agreement (ERA) GC: %lu passed agreements remain in the passed agreements hash table\n",
                          OMPI_NAME_PRINT(OMPI_PROC_MY_NAME),
                          opal_hash_table_get_size(&era_passed_agreements)));
+    /* Some agreements can remain in the era_passed_agreements table until
+     * finalize; notably, the last agreement in a communicator that has been
+     * freed.
+     *
+     * The commit that added this comment also removed the (unused) function
+     * mca_coll_ftagree_era_free_comm that could enforce purging that table
+     * during comm_free, at the cost of making comm_free hard synchronizing;
+     * this was deemed too disruptive for the small memory usage gain.
+     */
     for( rc = opal_hash_table_get_first_key_uint64(&era_passed_agreements, &key64, &value, &node);
          OPAL_SUCCESS == rc;
          rc = opal_hash_table_get_next_key_uint64(&era_passed_agreements, &key64, &value, node, &node) ) {
@@ -3269,7 +3285,7 @@ int mca_coll_ftagree_era_inter(void *contrib,
     shadowcomm->c_contextid = comm->c_contextid;
     shadowcomm->c_epoch = comm->c_epoch;
     shadowcomm->c_index = comm->c_index;
-    snprintf(shadowcomm->c_name, MPI_MAX_OBJECT_NAME, "SHADOW OF %s", &comm->c_name[0]);
+    snprintf(shadowcomm->c_name, OMPI_MPI_MAX_OBJECT_NAME_ABI, "SHADOW OF %s", &comm->c_name[0]);
     shadowcomm->any_source_offset = comm->any_source_offset;
     shadowcomm->agreement_specific = comm->agreement_specific;
 
@@ -3368,46 +3384,3 @@ int mca_coll_ftagree_iera_intra(void *contrib,
     return OMPI_SUCCESS;
 }
 
-#if 0
-// Per @bosilca and @jsquyres discussion 29 Apr 2021: there is
-// probably a memory leak in MPI_FINALIZE right now, because this
-// function does not appear to be being called from anywhere.
-// @bosilca's team is looking into it.
-int mca_coll_ftagree_era_free_comm(ompi_communicator_t* comm,
-                                   mca_coll_base_module_t *module)
-{
-    ompi_group_t* acked;
-    era_identifier_t aid;
-    int rc;
-
-    OPAL_OUTPUT_VERBOSE((4, ompi_ftmpi_output_handle,
-                         "%s ftagree:agreement (ERA) Freeing Communicator (%d.%d).\n",
-                         OMPI_NAME_PRINT(OMPI_PROC_MY_NAME),
-                         comm->c_contextid,
-                         comm->c_epoch));
-
-    opal_mutex_lock(&ompi_group_afp_mutex);
-    ompi_group_intersection(comm->c_remote_group, ompi_group_all_failed_procs, &acked);
-    opal_mutex_unlock(&ompi_group_afp_mutex);
-    do {
-        rc = mca_coll_ftagree_era_intra(NULL,
-                                        0,
-                                        &ompi_mpi_int.dt,
-                                        &ompi_mpi_op_band.op,
-                                        &acked, true,
-                                        comm,
-                                        comm->c_coll->coll_agree_module);
-    } while(rc != MPI_SUCCESS);
-    OBJ_RELEASE(acked);
-
-    aid.ERAID_FIELDS.contextid = comm->c_contextid.cid_sub.u64;
-    aid.ERAID_FIELDS.epoch     = comm->c_epoch;
-
-    opal_mutex_lock(&era_mutex);
-    /** We don't need to set aid.ERAID_FIELDS.agreementid to collect all of them */
-    era_collect_passed_agreements(aid, 0, (uint16_t)-1);
-    opal_mutex_unlock(&era_mutex);
-
-    return OMPI_SUCCESS;
-}
-#endif

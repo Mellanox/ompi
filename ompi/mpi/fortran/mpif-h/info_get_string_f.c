@@ -17,6 +17,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -28,7 +29,7 @@
 #include "ompi/info/info.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_INFO_GET_STRING = ompi_info_get_string_f
 #pragma weak pmpi_info_get_string = ompi_info_get_string_f
 #pragma weak pmpi_info_get_string_ = ompi_info_get_string_f
@@ -41,13 +42,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_INFO_GET_STRING,
                             pmpi_info_get_string,
                             pmpi_info_get_string_,
                             pmpi_info_get_string__,
-                            pompi_info_get_string_f,
+                            ompi_info_get_string_f,
                             (MPI_Fint *info, char *key, MPI_Fint *buflen, char *value, ompi_fortran_logical_t *flag, MPI_Fint *ierr, int key_len, int value_len),
                             (info, key, buflen, value, flag, ierr, key_len, value_len) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_INFO_GET_STRING = ompi_info_get_string_f
 #pragma weak mpi_info_get_string = ompi_info_get_string_f
 #pragma weak mpi_info_get_string_ = ompi_info_get_string_f
@@ -56,17 +57,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_INFO_GET_STRING,
 #pragma weak MPI_Info_get_string_f = ompi_info_get_string_f
 #pragma weak MPI_Info_get_string_f08 = ompi_info_get_string_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_INFO_GET_STRING,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_INFO_GET_STRING,
                             mpi_info_get_string,
                             mpi_info_get_string_,
                             mpi_info_get_string__,
                             ompi_info_get_string_f,
                             (MPI_Fint *info, char *key, MPI_Fint *buflen, char *value, ompi_fortran_logical_t *flag, MPI_Fint *ierr, int key_len, int value_len),
                             (info, key, buflen, value, flag, ierr, key_len, value_len) )
-#else
-#define ompi_info_get_string_f pompi_info_get_string_f
-#endif
 #endif
 
 

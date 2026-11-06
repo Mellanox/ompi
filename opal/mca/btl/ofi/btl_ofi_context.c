@@ -9,6 +9,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "btl_ofi.h"
@@ -16,7 +17,7 @@
 #include "btl_ofi_rdma.h"
 
 #if OPAL_HAVE_THREAD_LOCAL
-static opal_thread_local mca_btl_ofi_context_t *my_context = NULL;
+static opal_thread_local int64_t my_ctx_idx = -1;
 #endif /* OPAL_HAVE_THREAD_LOCAL */
 
 static int init_context_freelists(mca_btl_ofi_context_t *context)
@@ -62,11 +63,12 @@ static int init_context_freelists(mca_btl_ofi_context_t *context)
  * USE WITH NORMAL ENDPOINT ONLY */
 mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_normal(struct fi_info *info,
                                                         struct fid_domain *domain,
-                                                        struct fid_ep *ep, struct fid_av *av)
+                                                        struct fid_ep *ep, struct fid_av *av,
+                                                        struct mca_btl_ofi_module_t *btl)
 {
     int rc;
     uint32_t cq_flags = FI_TRANSMIT | FI_SEND | FI_RECV;
-    char *linux_device_name = info->domain_attr->name;
+    char *domain_name = info->domain_attr->name;
 
     struct fi_cq_attr cq_attr = {0};
 
@@ -81,8 +83,8 @@ mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_normal(struct fi_info *info,
     /* Don't really need to check, just avoiding compiler warning because
      * BTL_VERBOSE is a no op in performance build and the compiler will
      * complain about unused variable. */
-    if (NULL == linux_device_name) {
-        BTL_VERBOSE(("linux device name is NULL. This shouldn't happen."));
+    if (NULL == domain_name) {
+        BTL_VERBOSE(("domain name is NULL. This shouldn't happen."));
         goto single_fail;
     }
 
@@ -90,20 +92,20 @@ mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_normal(struct fi_info *info,
     cq_attr.wait_obj = FI_WAIT_NONE;
     rc = fi_cq_open(domain, &cq_attr, &context->cq, NULL);
     if (0 != rc) {
-        BTL_VERBOSE(("%s failed fi_cq_open with err=%s", linux_device_name, fi_strerror(-rc)));
+        BTL_VERBOSE(("%s failed fi_cq_open with err=%s", domain_name, fi_strerror(-rc)));
         goto single_fail;
     }
 
     rc = fi_ep_bind(ep, (fid_t) av, 0);
     if (0 != rc) {
-        BTL_VERBOSE(("%s failed fi_ep_bind with err=%s", linux_device_name, fi_strerror(-rc)));
+        BTL_VERBOSE(("%s failed fi_ep_bind with err=%s", domain_name, fi_strerror(-rc)));
         goto single_fail;
     }
 
     rc = fi_ep_bind(ep, (fid_t) context->cq, cq_flags);
     if (0 != rc) {
         BTL_VERBOSE(
-            ("%s failed fi_scalable_ep_bind with err=%s", linux_device_name, fi_strerror(-rc)));
+            ("%s failed fi_scalable_ep_bind with err=%s", domain_name, fi_strerror(-rc)));
         goto single_fail;
     }
 
@@ -115,7 +117,7 @@ mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_normal(struct fi_info *info,
     context->tx_ctx = ep;
     context->rx_ctx = ep;
     context->context_id = 0;
-    my_context = NULL;
+    context->btl = btl;
 
     return context;
 
@@ -132,13 +134,14 @@ single_fail:
 mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_scalable(struct fi_info *info,
                                                           struct fid_domain *domain,
                                                           struct fid_ep *sep, struct fid_av *av,
+                                                          struct mca_btl_ofi_module_t* btl,
                                                           size_t num_contexts)
 {
     BTL_VERBOSE(("creating %zu contexts", num_contexts));
 
     int rc;
     size_t i;
-    char *linux_device_name = info->domain_attr->name;
+    char *domain_name = info->domain_attr->name;
 
     struct fi_cq_attr cq_attr = {0};
     struct fi_tx_attr tx_attr = {0};
@@ -156,8 +159,8 @@ mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_scalable(struct fi_info *info,
     /* Don't really need to check, just avoiding compiler warning because
      * BTL_VERBOSE is a no op in performance build and the compiler will
      * complain about unused variable. */
-    if (NULL == linux_device_name) {
-        BTL_VERBOSE(("linux device name is NULL. This shouldn't happen."));
+    if (NULL == domain_name) {
+        BTL_VERBOSE(("domain name is NULL. This shouldn't happen."));
         goto scalable_fail;
     }
 
@@ -165,7 +168,7 @@ mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_scalable(struct fi_info *info,
     rc = fi_scalable_ep_bind(sep, (fid_t) av, 0);
     if (0 != rc) {
         BTL_VERBOSE(
-            ("%s failed fi_scalable_ep_bind with err=%s", linux_device_name, fi_strerror(-rc)));
+            ("%s failed fi_scalable_ep_bind with err=%s", domain_name, fi_strerror(-rc)));
         goto scalable_fail;
     }
 
@@ -173,7 +176,7 @@ mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_scalable(struct fi_info *info,
         rc = fi_tx_context(sep, i, &tx_attr, &contexts[i].tx_ctx, NULL);
         if (0 != rc) {
             BTL_VERBOSE(
-                ("%s failed fi_tx_context with err=%s", linux_device_name, fi_strerror(-rc)));
+                ("%s failed fi_tx_context with err=%s", domain_name, fi_strerror(-rc)));
             goto scalable_fail;
         }
 
@@ -183,7 +186,7 @@ mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_scalable(struct fi_info *info,
         rc = fi_rx_context(sep, i, &rx_attr, &contexts[i].rx_ctx, NULL);
         if (0 != rc) {
             BTL_VERBOSE(
-                ("%s failed fi_rx_context with err=%s", linux_device_name, fi_strerror(-rc)));
+                ("%s failed fi_rx_context with err=%s", domain_name, fi_strerror(-rc)));
             goto scalable_fail;
         }
 
@@ -192,14 +195,14 @@ mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_scalable(struct fi_info *info,
         cq_attr.wait_obj = FI_WAIT_NONE;
         rc = fi_cq_open(domain, &cq_attr, &contexts[i].cq, NULL);
         if (0 != rc) {
-            BTL_VERBOSE(("%s failed fi_cq_open with err=%s", linux_device_name, fi_strerror(-rc)));
+            BTL_VERBOSE(("%s failed fi_cq_open with err=%s", domain_name, fi_strerror(-rc)));
             goto scalable_fail;
         }
 
         /* bind cq to transmit context */
         rc = fi_ep_bind(contexts[i].tx_ctx, (fid_t) contexts[i].cq, FI_TRANSMIT);
         if (0 != rc) {
-            BTL_VERBOSE(("%s failed fi_ep_bind with err=%s", linux_device_name, fi_strerror(-rc)));
+            BTL_VERBOSE(("%s failed fi_ep_bind with err=%s", domain_name, fi_strerror(-rc)));
             goto scalable_fail;
         }
 
@@ -208,7 +211,7 @@ mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_scalable(struct fi_info *info,
             rc = fi_ep_bind(contexts[i].rx_ctx, (fid_t) contexts[i].cq, FI_RECV);
             if (0 != rc) {
                 BTL_VERBOSE(
-                    ("%s failed fi_ep_bind with err=%s", linux_device_name, fi_strerror(-rc)));
+                    ("%s failed fi_ep_bind with err=%s", domain_name, fi_strerror(-rc)));
                 goto scalable_fail;
             }
         }
@@ -216,13 +219,13 @@ mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_scalable(struct fi_info *info,
         /* enable the context. */
         rc = fi_enable(contexts[i].tx_ctx);
         if (0 != rc) {
-            BTL_VERBOSE(("%s failed fi_enable with err=%s", linux_device_name, fi_strerror(-rc)));
+            BTL_VERBOSE(("%s failed fi_enable with err=%s", domain_name, fi_strerror(-rc)));
             goto scalable_fail;
         }
 
         rc = fi_enable(contexts[i].rx_ctx);
         if (0 != rc) {
-            BTL_VERBOSE(("%s failed fi_enable with err=%s", linux_device_name, fi_strerror(-rc)));
+            BTL_VERBOSE(("%s failed fi_enable with err=%s", domain_name, fi_strerror(-rc)));
             goto scalable_fail;
         }
 
@@ -234,6 +237,7 @@ mca_btl_ofi_context_t *mca_btl_ofi_context_alloc_scalable(struct fi_info *info,
 
         /* assign the id */
         contexts[i].context_id = i;
+        contexts[i].btl = btl;
     }
 
     return contexts;
@@ -283,20 +287,17 @@ void mca_btl_ofi_context_finalize(mca_btl_ofi_context_t *context, bool scalable_
 mca_btl_ofi_context_t *get_ofi_context(mca_btl_ofi_module_t *btl)
 {
 #if OPAL_HAVE_THREAD_LOCAL
-    /* With TLS, we cache the context we use. */
-    static volatile int64_t cur_num = 0;
+    /* With TLS, we cache a per-thread context slot index and always index
+     * into the requested module's own contexts array. Caching the context
+     * pointer itself would pin every module's traffic to whichever module
+     * was used first. */
+    static opal_atomic_int64_t cur_num = 0;
 
-    if (OPAL_UNLIKELY(my_context == NULL)) {
-        OPAL_THREAD_LOCK(&btl->module_lock);
-
-        my_context = &btl->contexts[cur_num];
-        cur_num = (cur_num + 1) % btl->num_contexts;
-
-        OPAL_THREAD_UNLOCK(&btl->module_lock);
+    if (OPAL_UNLIKELY(my_ctx_idx < 0)) {
+        my_ctx_idx = opal_atomic_fetch_add_64(&cur_num, 1);
     }
 
-    assert(my_context);
-    return my_context;
+    return &btl->contexts[my_ctx_idx % btl->num_contexts];
 #else
     return get_ofi_context_rr(btl);
 #endif
@@ -387,26 +388,62 @@ int mca_btl_ofi_context_progress(mca_btl_ofi_context_t *context)
             BTL_ERROR(("%s:%d: Error returned from fi_cq_readerr: %s(%d)", __FILE__, __LINE__,
                        fi_strerror(-ret), ret));
             MCA_BTL_OFI_ABORT();
-        } else if(NULL != cqerr.op_context){
+        } else {
             switch(cqerr.err) {
-            case -FI_EIO: {
-                mca_btl_ofi_completion_context_t *c_ctx =
-                    (mca_btl_ofi_completion_context_t*) cqerr.op_context;
-                mca_btl_ofi_base_completion_t *comp =
-                    (mca_btl_ofi_base_completion_t*) c_ctx->comp;
-                mca_btl_ofi_module_t *ofi_btl =
-                    (mca_btl_ofi_module_t*) comp->btl;
-                if(ofi_btl->ofi_error_cb){
-                    opal_proc_t *ep_proc = NULL;
-                    if(comp->endpoint){
-                        ep_proc = comp->endpoint->ep_proc;
+#ifdef EREMOTEIO
+            case FI_EREMOTEIO:
+#endif
+            case FI_EHOSTUNREACH:
+            case FI_ECONNABORTED:
+            case FI_ECONNRESET:
+            case FI_ENOTCONN:
+#ifdef FI_EHOSTDOWN
+            // FI_EHOSTDOWN added in libfabric 1.6.0
+            case FI_EHOSTDOWN:
+#endif
+            case FI_EIO: {
+                if (context->btl->ofi_error_cb) {
+                    opal_proc_t* proc = NULL;
+                    if (NULL != cqerr.op_context) {
+                        mca_btl_ofi_completion_context_t *c_ctx =
+                            (mca_btl_ofi_completion_context_t*) cqerr.op_context;
+                        mca_btl_ofi_base_completion_t *comp =
+                            (mca_btl_ofi_base_completion_t*) c_ctx->comp;
+                        if (NULL != comp->endpoint) {
+                            proc = comp->endpoint->ep_proc;
+                        }
                     }
-                    ofi_btl->ofi_error_cb(comp->btl, 0, ep_proc,
-                        "IO error reported by libfabric");
+#if (FI_MAJOR_VERSION > 1) || ((FI_MAJOR_VERSION > 0) && (FI_MINOR_VERSION >= 20))
+                    // Starting with v1.20, cqerr provides an fi_addr_t
+                    if (NULL == proc) {
+                        mca_btl_ofi_endpoint_t *ep = NULL;
+                        OPAL_LIST_FOREACH(ep, &context->btl->endpoints, mca_btl_ofi_endpoint_t){
+                            if (ep->peer_addr == cqerr.src_addr) {
+                                proc = ep->ep_proc;
+                                break;
+                            }
+                        }
+                    }
+#endif
+                    const char* base_str = "IO error reported by libfabric: ";
+                    const char* fi_str = fi_strerror(cqerr.err);
+                    size_t base_len = strlen(base_str);
+                    size_t fi_len = strlen(fi_str);
+                    char* err_str = malloc(base_len + fi_len + 1);
+                    for(size_t i = 0; i < base_len; i++) err_str[i] = base_str[i];
+                    for(size_t i = 0; i < fi_len; i++) err_str[i+base_len] = fi_str[i];
+                    err_str[base_len+fi_len] = '\0';
+                    if (cqerr.op_context || proc) {
+                        // Report any errors linked to an operation or known proc
+                        context->btl->ofi_error_cb(&context->btl->super, 0, proc, err_str);
+                    }
+                    free(err_str);
                 }
 
-                ++events;
-                complete_op_context(context, cqerr.op_context, OPAL_ERR_UNREACH);
+                if (NULL != cqerr.op_context) {
+                    ++events;
+                    complete_op_context(context, cqerr.op_context, OPAL_ERR_UNREACH);
+                }
                 break;
             }
             default:

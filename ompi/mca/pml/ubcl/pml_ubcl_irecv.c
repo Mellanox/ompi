@@ -1,12 +1,13 @@
 /* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil -*- */
 /*
- * Copyright (c) 2019-2025 Bull SAS.  All rights reserved.
+ * Copyright (c) 2019-2026 Bull SAS.  All rights reserved.
  *
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 /**
  * @file pml_ubcl_irecv.c
@@ -34,12 +35,10 @@
 /**
  * Prepare a request for reception.
  */
-void mca_pml_ubcl_irecv_prepare(void *buf, size_t count,
-                                ompi_datatype_t *datatype, int src, int tag,
-                                struct ompi_communicator_t *comm,
-                                struct ompi_request_t **request,
-                                bool persistent, bool probe,
-                                struct ompi_message_t *message)
+void mca_pml_ubcl_irecv_prepare(void *buf, size_t count, ompi_datatype_t *datatype, int src,
+                                int tag, struct ompi_communicator_t *comm,
+                                struct ompi_request_t **request, mca_pml_ubcl_comm_form form,
+                                bool probe, struct ompi_message_t *message)
 {
     ompi_proc_t *proc;
     mca_pml_ubcl_request_t *req;
@@ -71,8 +70,8 @@ void mca_pml_ubcl_irecv_prepare(void *buf, size_t count,
                            "Not enough memory to allocate a recv request");
     }
 
-    MCA_PML_UBCL_RECV_REQUEST_INIT(req, buf, count, datatype, src, tag, comm,
-                                   proc, persistent, probe, message);
+    MCA_PML_UBCL_RECV_REQUEST_INIT(req, buf, count, datatype, src, tag, comm, proc, form, probe,
+                                   message);
 
     /* Set user request */
     *request = &req->ompi_req;
@@ -91,17 +90,16 @@ void mca_pml_ubcl_irecv_start(struct ompi_request_t **request)
                                               mca_pml_ubcl_request_t, ompi_req);
     void *output_buf = (void *) req->buf;
 
-    ubcl_memory_descriptor_t rbuf_md;
     ubcl_error_t err = 0;
     size_t size;
 
     /* Init UBCL MD */
-    err = ubcl_memory_descriptor_init(&rbuf_md);
+    err = ubcl_memory_descriptor_init(&req->md);
     if (UBCL_SUCCESS != err) {
         mca_pml_ubcl_error(ubcl_error_to_ompi(err), "Failed to initialize ubcl MD");
     }
     if (pml_ubcl_request_is_cuda_buf(req)) {
-        err = ubcl_memory_descriptor_set_properties(UBCL_BUF_IS_CUDA, &rbuf_md);
+        err = ubcl_memory_descriptor_set_properties(UBCL_BUF_IS_CUDA, &req->md);
         if (UBCL_SUCCESS != err) {
             mca_pml_ubcl_error(ubcl_error_to_ompi(err),
                                "Failed to set MD properties, got error: %d", err);
@@ -113,7 +111,7 @@ void mca_pml_ubcl_irecv_start(struct ompi_request_t **request)
         ompi_datatype_type_size(req->datatype, &size);
         size *= req->count;
 
-        err = ubcl_memory_descriptor_build_contiguous(output_buf, size, &rbuf_md);
+        err = ubcl_memory_descriptor_build_contiguous(output_buf, size, &req->md);
         if (UBCL_SUCCESS != err) {
             mca_pml_ubcl_error(ubcl_error_to_ompi(err),
                                "Failed to build memory descriptor for output buffer");
@@ -121,12 +119,9 @@ void mca_pml_ubcl_irecv_start(struct ompi_request_t **request)
     }
 
     /* Always build a custom MD representation so that we have a fallback */
-    err = ubcl_memory_descriptor_build_custom((void *) &req->convertor,
-                                              pml_ubcl_datatype_pack,
-                                              pml_ubcl_datatype_unpack,
-                                              pml_ubcl_datatype_mem_size,
-                                              pml_ubcl_datatype_finish,
-                                              &rbuf_md);
+    err = ubcl_memory_descriptor_build_custom((void *) &req->convertor, pml_ubcl_datatype_pack,
+                                              pml_ubcl_datatype_unpack, pml_ubcl_datatype_mem_size,
+                                              pml_ubcl_datatype_finish, &req->md);
     if (UBCL_SUCCESS != err) {
         mca_pml_ubcl_error(ubcl_error_to_ompi(err),
                            "Failed to build custom memory descriptor for input buffer");
@@ -136,9 +131,8 @@ void mca_pml_ubcl_irecv_start(struct ompi_request_t **request)
     MCA_PML_UBCL_REQUEST_ACTIVATE(req);
 
     if (req->message != NULL) {
-        err = ubcl_imrecv(rbuf_md, (ubcl_message_t **) &req->message,
-                          (ubcl_completion_callback_fct) &ubcl_request_recv_complete_cb,
-                          *request);
+        err = ubcl_imrecv(req->md, (ubcl_message_t **) &req->message,
+                          (ubcl_completion_callback_fct) ubcl_request_recv_complete_cb, *request);
     } else {
         uint64_t rank;
         uint64_t cid;
@@ -158,9 +152,9 @@ void mca_pml_ubcl_irecv_start(struct ompi_request_t **request)
 
         OPAL_OUTPUT_VERBOSE(
                 (50, mca_pml_ubcl_component.output, "PML/UBCL IRECV: recv from rank=%zu\n", rank));
-        err = ubcl_irecv(rbuf_md, tag, ubcl_cid, rank,
-                         (ubcl_completion_callback_fct) &ubcl_request_recv_complete_cb,
-                         *request, &req->ubcl_operation_handle);
+        err = ubcl_irecv(req->md, tag, ubcl_cid, rank,
+                         (ubcl_completion_callback_fct) &ubcl_request_recv_complete_cb, *request,
+                         &req->ubcl_operation_handle);
     }
 
     if (UBCL_ERROR == err) {
@@ -182,7 +176,7 @@ int mca_pml_ubcl_irecv_init(void *buf, size_t count, ompi_datatype_t *datatype,
 
     /* Create request */
     mca_pml_ubcl_irecv_prepare(buf, count, datatype, src, tag, comm, request,
-                               true, false, NULL);
+                               MCA_PML_UBCL_PERSISTENT_COMM, false, NULL);
 
     return OMPI_SUCCESS;
 }
@@ -200,7 +194,7 @@ int mca_pml_ubcl_irecv(void *buf, size_t count, ompi_datatype_t *datatype,
 
     /* Create request and start communication */
     mca_pml_ubcl_irecv_prepare(buf, count, datatype, src, tag, comm, request,
-                               false, false, NULL);
+                               MCA_PML_UBCL_NONBLOCKING_COMM, false, NULL);
     mca_pml_ubcl_irecv_start(request);
 
     return OMPI_SUCCESS;
@@ -221,7 +215,7 @@ int mca_pml_ubcl_recv(void *buf, size_t count, ompi_datatype_t *datatype,
     struct ompi_request_t *request = NULL;
     int rc = 0; /** TODO: fix return code */
     mca_pml_ubcl_irecv_prepare(buf, count, datatype, src, tag, comm, &request,
-                               false, false, NULL);
+                               MCA_PML_UBCL_BLOCKING_COMM, false, NULL);
     mca_pml_ubcl_irecv_start(&request);
 
     /* Wait for data to be received */
@@ -248,9 +242,9 @@ int mca_pml_ubcl_imrecv(void *buf, size_t count, ompi_datatype_t *datatype,
                         "UBCL_MODULE_IMRECV\n"));
 
     /* Create request and start communication */
-    mca_pml_ubcl_irecv_prepare(buf, count, datatype, (*message)->peer,
-                               OMPI_ANY_TAG, (*message)->comm, request,
-                               false, true, (*message)->req_ptr);
+    mca_pml_ubcl_irecv_prepare(buf, count, datatype, (*message)->peer, OMPI_ANY_TAG,
+                               (*message)->comm, request, MCA_PML_UBCL_NONBLOCKING_COMM, true,
+                               (*message)->req_ptr);
     mca_pml_ubcl_irecv_start(request);
     ompi_message_return(*message);
     *message = MPI_MESSAGE_NULL;
@@ -267,9 +261,9 @@ int mca_pml_ubcl_mrecv(void *buf, size_t count, ompi_datatype_t *datatype,
     struct ompi_request_t *request = NULL;
     int rc = 0;
     //we're matching any message tag
-    mca_pml_ubcl_irecv_prepare(buf, count, datatype, (*message)->peer,
-                               OMPI_ANY_TAG, (*message)->comm, &request,
-                               false, true, (*message)->req_ptr);
+    mca_pml_ubcl_irecv_prepare(buf, count, datatype, (*message)->peer, OMPI_ANY_TAG,
+                               (*message)->comm, &request, MCA_PML_UBCL_BLOCKING_COMM, true,
+                               (*message)->req_ptr);
     mca_pml_ubcl_irecv_start(&request);
 
     /* Wait for data to be received */

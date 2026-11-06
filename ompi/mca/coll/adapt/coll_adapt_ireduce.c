@@ -11,6 +11,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -48,7 +49,7 @@ int ompi_coll_adapt_ireduce_register(void)
         mca_coll_adapt_component.adapt_ireduce_algorithm = 1;
     }
 
-    mca_coll_adapt_component.adapt_ireduce_segment_size = 163740;
+    mca_coll_adapt_component.adapt_ireduce_segment_size = 524288;
     mca_base_component_var_register(c, "reduce_segment_size",
                                     "Segment size in bytes used by default for reduce algorithms. Only has meaning if algorithm is forced and supports segmenting. 0 bytes means no segmentation.",
                                     MCA_BASE_VAR_TYPE_SIZE_T, NULL, 0, MCA_BASE_VAR_FLAG_SETTABLE,
@@ -611,7 +612,7 @@ int ompi_coll_adapt_ireduce_generic(const void *sbuf, void *rbuf, size_t count,
     if (tree->tree_nextsize > 0) {
         size_t num_allocate_elems = mca_coll_adapt_component.adapt_inbuf_free_list_min;
         if (((size_t) tree->tree_nextsize * num_segs) < num_allocate_elems) {
-            num_allocate_elems = tree->tree_nextsize * num_segs;
+            num_allocate_elems = (size_t) tree->tree_nextsize * num_segs;
         }
         opal_free_list_init(&con->inbuf_list,
                             sizeof(ompi_coll_adapt_inbuf_t) + real_seg_size,

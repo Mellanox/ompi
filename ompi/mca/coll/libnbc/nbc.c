@@ -21,6 +21,7 @@
  *                         rights reserved.
  * Copyright (c) 2018      FUJITSU LIMITED.  All rights reserved.
  * $COPYRIGHT$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  *
  * Additional copyrights may follow
  */
@@ -29,6 +30,7 @@
 #include "ompi/mca/coll/base/coll_base_functions.h"
 #include "ompi/mca/coll/base/coll_base_util.h"
 #include "ompi/op/op.h"
+#include "ompi/runtime/mpiruntime.h"
 #include "ompi/mca/pml/pml.h"
 
 /* only used in this file */
@@ -332,7 +334,7 @@ int NBC_Progress(NBC_Handle *handle) {
   if ((handle->req_count > 0) && (handle->req_array != NULL)) {
     NBC_DEBUG(50, "NBC_Progress: testing for %i requests\n", handle->req_count);
 #ifdef NBC_TIMING
-    Test_time -= MPI_Wtime();
+    Test_time -= ompi_wtime();
 #endif
     /* don't call ompi_request_test_all as it causes a recursive call into opal_progress */
     while (handle->req_count) {
@@ -364,7 +366,7 @@ int NBC_Progress(NBC_Handle *handle) {
         }
     }
 #ifdef NBC_TIMING
-    Test_time += MPI_Wtime();
+    Test_time += ompi_wtime();
 #endif
   }
 
@@ -464,7 +466,7 @@ static inline int NBC_Start_round(NBC_Handle *handle) {
           buf1=(void *)sendargs.buf;
         }
 #ifdef NBC_TIMING
-        Isend_time -= MPI_Wtime();
+        Isend_time -= ompi_wtime();
 #endif
         tmp = (MPI_Request *) realloc ((void *) handle->req_array, handle->req_count * sizeof (MPI_Request));
         if (NULL == tmp) {
@@ -477,12 +479,12 @@ static inline int NBC_Start_round(NBC_Handle *handle) {
                                  MCA_PML_BASE_SEND_STANDARD, sendargs.local?handle->comm->c_local_comm:handle->comm,
                                  handle->req_array+handle->req_count - 1));
         if (OMPI_SUCCESS != res) {
-          NBC_Error ("Error in MPI_Isend(%lu, %i, %p, %i, %i, %lu) (%i)", (unsigned long)buf1, sendargs.count,
+          NBC_Error ("Error in MPI_Isend(%lu, %zu, %p, %i, %i, %lu) (%i)", (unsigned long)buf1, sendargs.count,
                      sendargs.datatype, sendargs.dest, handle->tag, (unsigned long)handle->comm, res);
           return res;
         }
 #ifdef NBC_TIMING
-        Isend_time += MPI_Wtime();
+        Isend_time += ompi_wtime();
 #endif
         break;
       case RECV:
@@ -499,7 +501,7 @@ static inline int NBC_Start_round(NBC_Handle *handle) {
           buf1=recvargs.buf;
         }
 #ifdef NBC_TIMING
-        Irecv_time -= MPI_Wtime();
+        Irecv_time -= ompi_wtime();
 #endif
         tmp = (MPI_Request *) realloc ((void *) handle->req_array, handle->req_count * sizeof (MPI_Request));
         if (NULL == tmp) {
@@ -511,12 +513,12 @@ static inline int NBC_Start_round(NBC_Handle *handle) {
         res = MCA_PML_CALL(irecv(buf1, recvargs.count, recvargs.datatype, recvargs.source, handle->tag, recvargs.local?handle->comm->c_local_comm:handle->comm,
                                  handle->req_array+handle->req_count-1));
         if (OMPI_SUCCESS != res) {
-          NBC_Error("Error in MPI_Irecv(%lu, %i, %p, %i, %i, %lu) (%i)", (unsigned long)buf1, recvargs.count,
+          NBC_Error("Error in MPI_Irecv(%lu, %zu, %p, %i, %i, %lu) (%i)", (unsigned long)buf1, recvargs.count,
                     recvargs.datatype, recvargs.source, handle->tag, (unsigned long)handle->comm, res);
           return res;
         }
 #ifdef NBC_TIMING
-        Irecv_time += MPI_Wtime();
+        Irecv_time += ompi_wtime();
 #endif
         break;
       case OP:
@@ -585,7 +587,7 @@ static inline int NBC_Start_round(NBC_Handle *handle) {
 
         break;
       default:
-        NBC_Error ("NBC_Start_round: bad type %li at offset %li", (long)type, offset);
+        NBC_Error ("NBC_Start_round: bad type %li at offset %i", (long)type, offset);
         return OMPI_ERROR;
     }
   }
@@ -598,7 +600,7 @@ static inline int NBC_Start_round(NBC_Handle *handle) {
   if (handle->row_offset) {
     res = NBC_Progress(handle);
     if ((NBC_OK != res) && (NBC_CONTINUE != res)) {
-      return OMPI_ERROR;
+      return res;
     }
   }
 

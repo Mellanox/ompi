@@ -19,6 +19,7 @@
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -26,7 +27,7 @@
 #include "ompi/mpi/fortran/mpif-h/bindings.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_BUFFER_FLUSH = ompi_buffer_flush_f
 #pragma weak pmpi_buffer_flush = ompi_buffer_flush_f
 #pragma weak pmpi_buffer_flush_ = ompi_buffer_flush_f
@@ -39,13 +40,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_BUFFER_FLUSH,
                            pmpi_buffer_flush,
                            pmpi_buffer_flush_,
                            pmpi_buffer_flush__,
-                           pompi_buffer_flush_f,
+                           ompi_buffer_flush_f,
                            (MPI_Fint *ierr),
                            (ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_BUFFER_FLUSH = ompi_buffer_flush_f
 #pragma weak mpi_buffer_flush = ompi_buffer_flush_f
 #pragma weak mpi_buffer_flush_ = ompi_buffer_flush_f
@@ -54,17 +55,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_BUFFER_FLUSH,
 #pragma weak MPI_Buffer_flush_f = ompi_buffer_flush_f
 #pragma weak MPI_Buffer_flush_f08 = ompi_buffer_flush_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_BUFFER_FLUSH,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_BUFFER_FLUSH,
                            mpi_buffer_flush,
                            mpi_buffer_flush_,
                            mpi_buffer_flush__,
                            ompi_buffer_flush_f,
                            (MPI_Fint *ierr),
                            (ierr) )
-#else
-#define ompi_buffer_flush_f pompi_buffer_flush_f
-#endif
 #endif
 
 

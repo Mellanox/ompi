@@ -3,6 +3,7 @@
 ! Copyright (c) 2019-2020 Research Organization for Information Science
 !                         and Technology (RIST).  All rights reserved.
 ! Copyright (c) 2025      UT-Battelle, LLC.  All rights reserved.
+! SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 
 #if OMPI_BUILD_MPI_PROFILING
 
@@ -610,10 +611,7 @@
 #define MPI_Session_get_errhandler PMPI_Session_get_errhandler
 #define MPI_Session_get_info_f08 PMPI_Session_get_info_f08
 #define MPI_Session_get_info PMPI_Session_get_info
-#define MPI_Session_get_info PMPI_Session_get_info
 #define MPI_Session_get_nth_pset_f08 PMPI_Session_get_nth_pset_f08
-#define MPI_Session_get_nth_psetlen_f08 PMPI_Session_get_nth_psetlen_f08
-#define MPI_Session_get_nth_psetlen PMPI_Session_get_nth_psetlen
 #define MPI_Session_get_nth_pset PMPI_Session_get_nth_pset
 #define MPI_Session_get_num_psets_f08 PMPI_Session_get_num_psets_f08
 #define MPI_Session_get_num_psets PMPI_Session_get_num_psets

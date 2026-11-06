@@ -15,6 +15,7 @@ dnl
 dnl Additional copyrights may follow
 dnl
 dnl $HEADER$
+dnl SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 dnl
 
 # OPAL_CHECK_KNEM(prefix, [action-if-found], [action-if-not-found])
@@ -36,7 +37,7 @@ AC_DEFUN([OPAL_CHECK_KNEM],[
           [opal_check_knem_happy="yes"])
 
     AS_IF([test "${opal_check_knem_happy}" = "yes"],
-          [AS_IF([test -a "${with_knem}" != "yes"],
+          [AS_IF([test -n "${with_knem}" -a "${with_knem}" != "yes"],
                  [$1_CPPFLAGS="-I${with_knem}/include"
                   CPPFLAGS="$CPPFLAGS ${$1_CPPFLAGS}"])
            AC_CHECK_HEADER([knem_io.h], [opal_check_knem_happy="yes"], [opal_check_knem_happy="no"])])

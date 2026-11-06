@@ -1,12 +1,13 @@
 /* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil -*- */
 /*
- * Copyright (c) 2019-2025 Bull SAS.  All rights reserved.
+ * Copyright (c) 2019-2026 Bull SAS.  All rights reserved.
  *
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 /**
  * @file pml_ubcl_isend.c
@@ -63,11 +64,10 @@ static inline void get_ubcl_send_mode(mca_pml_base_send_mode_t mode, ubcl_send_m
  * MCA: then receiver may print a warning or an error.
  * SYNCHRONOUS forces STANDARD rendezvous protocols.
  */
-static inline void mca_pml_ubcl_isend_prepare(const void *buf, size_t count,
-                                              ompi_datatype_t *datatype, int dst, int tag,
-                                              mca_pml_base_send_mode_t mode,
-                                              struct ompi_communicator_t *comm,
-                                              struct ompi_request_t **request, bool persistent)
+static inline void
+mca_pml_ubcl_isend_prepare(const void *buf, size_t count, ompi_datatype_t *datatype, int dst,
+                           int tag, mca_pml_base_send_mode_t mode, struct ompi_communicator_t *comm,
+                           struct ompi_request_t **request, mca_pml_ubcl_comm_form form)
 {
     ompi_proc_t *proc;
     mca_pml_ubcl_request_t *req;
@@ -87,8 +87,7 @@ static inline void mca_pml_ubcl_isend_prepare(const void *buf, size_t count,
     }
 
     /* TODO: Find out what can be simplified in this macro and request structure */
-    MCA_PML_UBCL_SEND_REQUEST_INIT(req, buf, count, datatype, dst, tag, mode, comm, proc,
-                                   persistent);
+    MCA_PML_UBCL_SEND_REQUEST_INIT(req, buf, count, datatype, dst, tag, mode, comm, proc, form);
 
     /* Set user request */
     *request = &req->ompi_req;
@@ -106,7 +105,6 @@ void mca_pml_ubcl_isend_start(struct ompi_request_t **request)
 
     char *input_buf = NULL;
     mca_common_ubcl_endpoint_t *endpoint = NULL;
-    ubcl_memory_descriptor_t sbuf_md;
     ubcl_error_t err = 0;
     ubcl_send_mode_t send_mode;
     uint64_t cid;
@@ -118,6 +116,9 @@ void mca_pml_ubcl_isend_start(struct ompi_request_t **request)
 
     if (MCA_PML_BASE_SEND_BUFFERED == req->mode) {
         pml_ubcl_bufferize(req);
+        if (MCA_PML_UBCL_BLOCKING_COMM == req->form) {
+            req->to_free = 1;
+        }
     }
     get_ubcl_send_mode(req->mode, &send_mode);
 
@@ -127,12 +128,12 @@ void mca_pml_ubcl_isend_start(struct ompi_request_t **request)
     endpoint = (mca_common_ubcl_endpoint_t *) req->proc->proc_endpoints[OMPI_PROC_ENDPOINT_TAG_PML];
 
     /* Init UBCL MD */
-    err = ubcl_memory_descriptor_init(&sbuf_md);
+    err = ubcl_memory_descriptor_init(&req->md);
     if (UBCL_SUCCESS != err) {
         mca_pml_ubcl_error(ubcl_error_to_ompi(err), "Failed to initialize ubcl MD");
     }
     if (pml_ubcl_request_is_cuda_buf(req)) {
-        err = ubcl_memory_descriptor_set_properties(UBCL_BUF_IS_CUDA, &sbuf_md);
+        err = ubcl_memory_descriptor_set_properties(UBCL_BUF_IS_CUDA, &req->md);
         if (UBCL_SUCCESS != err) {
             mca_pml_ubcl_error(ubcl_error_to_ompi(err),
                                "Failed to set MD properties, got error: %d", err);
@@ -143,7 +144,7 @@ void mca_pml_ubcl_isend_start(struct ompi_request_t **request)
     if (! MCA_PML_UBCL_REQUEST_NEED_XPACK(req)) {
         ptrdiff_t gap = 0;
         size_t span = opal_datatype_span(&req->datatype->super, req->count, &gap);
-        err = ubcl_memory_descriptor_build_contiguous(input_buf+gap, span, &sbuf_md);
+        err = ubcl_memory_descriptor_build_contiguous(input_buf + gap, span, &req->md);
         if (UBCL_SUCCESS != err) {
             mca_pml_ubcl_error(ubcl_error_to_ompi(err),
                                "Failed to build contiguous memory descriptor for input buffer");
@@ -151,11 +152,9 @@ void mca_pml_ubcl_isend_start(struct ompi_request_t **request)
     }
 
     /* Always build a custom MD representation so that we have a fallback */
-    err = ubcl_memory_descriptor_build_custom((void *) &req->convertor,
-                                              pml_ubcl_datatype_pack,
-                                              pml_ubcl_datatype_unpack,
-                                              pml_ubcl_datatype_mem_size,
-                                              pml_ubcl_datatype_finish, &sbuf_md);
+    err = ubcl_memory_descriptor_build_custom((void *) &req->convertor, pml_ubcl_datatype_pack,
+                                              pml_ubcl_datatype_unpack, pml_ubcl_datatype_mem_size,
+                                              pml_ubcl_datatype_finish, &req->md);
     if (UBCL_SUCCESS != err) {
         mca_pml_ubcl_error(ubcl_error_to_ompi(err),
                            "Failed to build custom memory descriptor for input buffer");
@@ -171,9 +170,9 @@ void mca_pml_ubcl_isend_start(struct ompi_request_t **request)
     OPAL_OUTPUT_VERBOSE(
         (50, mca_pml_ubcl_component.output, "PML/UBCL ISEND: sending to rank=%zu\n", endpoint->rank));
 
-    err = ubcl_isend(sbuf_md, tag, ubcl_cid, endpoint->rank, send_mode,
-                     (ubcl_completion_callback_fct) &ubcl_request_send_complete_cb,
-                     *request, &req->ubcl_operation_handle);
+    err = ubcl_isend(req->md, tag, ubcl_cid, endpoint->rank, send_mode,
+                     (ubcl_completion_callback_fct) ubcl_request_send_complete_cb, *request,
+                     &req->ubcl_operation_handle);
     if (UBCL_ERROR == err) {
         mca_pml_ubcl_error(ubcl_error_to_ompi(err), "Failed to send data");
     }
@@ -194,7 +193,8 @@ int mca_pml_ubcl_isend_init(const void *buf, size_t count, ompi_datatype_t *data
     OPAL_OUTPUT_VERBOSE((50, mca_pml_ubcl_component.output, "UBCL_MODULE_ISEND_INIT\n"));
 
     /* Create request */
-    mca_pml_ubcl_isend_prepare(buf, count, datatype, dst, tag, mode, comm, request, true);
+    mca_pml_ubcl_isend_prepare(buf, count, datatype, dst, tag, mode, comm, request,
+                               MCA_PML_UBCL_PERSISTENT_COMM);
 
     return OMPI_SUCCESS;
 }
@@ -210,7 +210,8 @@ int mca_pml_ubcl_isend(const void *buf, size_t count, ompi_datatype_t *datatype,
     OPAL_OUTPUT_VERBOSE((50, mca_pml_ubcl_component.output, "UBCL_MODULE_ISEND\n"));
 
     /* Create request and start communication */
-    mca_pml_ubcl_isend_prepare(buf, count, datatype, dst, tag, mode, comm, request, false);
+    mca_pml_ubcl_isend_prepare(buf, count, datatype, dst, tag, mode, comm, request,
+                               MCA_PML_UBCL_NONBLOCKING_COMM);
     mca_pml_ubcl_isend_start(request);
 
     return OMPI_SUCCESS;
@@ -223,24 +224,23 @@ int mca_pml_ubcl_isend(const void *buf, size_t count, ompi_datatype_t *datatype,
 int mca_pml_ubcl_send(const void *buf, size_t count, ompi_datatype_t *datatype, int dst, int tag,
                       mca_pml_base_send_mode_t mode, struct ompi_communicator_t *comm)
 {
-    int ret;
     mca_pml_ubcl_request_t *request = NULL;
     struct ompi_request_t *ompi_request;
 
     OPAL_OUTPUT_VERBOSE((50, mca_pml_ubcl_component.output, "UBCL_MODULE_SEND\n"));
 
-    ret = mca_pml_ubcl_isend(buf, count, datatype, dst, tag, mode, comm, &ompi_request);
-    if (OMPI_SUCCESS != ret || NULL == ompi_request) {
-        return ret;
+    mca_pml_ubcl_isend_prepare(buf, count, datatype, dst, tag, mode, comm, &ompi_request,
+                               MCA_PML_UBCL_BLOCKING_COMM);
+    mca_pml_ubcl_isend_start(&ompi_request);
+    if (NULL == ompi_request) {
+        return OMPI_ERROR;
     }
 
     request = container_of(ompi_request, mca_pml_ubcl_request_t, ompi_req);
 
-    if (MCA_PML_BASE_SEND_BUFFERED == mode) {
+    if (MCA_PML_BASE_SEND_BUFFERED != mode) {
         /* MPI specification: Bsend is local, no information about the remote.
          * PML/BXI always buffers Bsend data. No need to wait request completion */
-        request->to_free = 1;
-    } else {
         ompi_request_wait_completion(ompi_request);
         mca_pml_ubcl_request_finalize(request);
     }

@@ -12,11 +12,13 @@
  * Copyright (c) 2011-2012 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  */
 
 #include "ompi_config.h"
@@ -25,7 +27,7 @@
 #include "ompi/group/group.h"
 
 #if OMPI_BUILD_MPI_PROFILING
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak PMPI_GROUP_EXCL = ompi_group_excl_f
 #pragma weak pmpi_group_excl = ompi_group_excl_f
 #pragma weak pmpi_group_excl_ = ompi_group_excl_f
@@ -38,13 +40,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_GROUP_EXCL,
                            pmpi_group_excl,
                            pmpi_group_excl_,
                            pmpi_group_excl__,
-                           pompi_group_excl_f,
+                           ompi_group_excl_f,
                            (MPI_Fint *group, MPI_Fint *n, MPI_Fint *ranks, MPI_Fint *newgroup, MPI_Fint *ierr),
                            (group, n, ranks, newgroup, ierr) )
 #endif
 #endif
 
-#if OPAL_HAVE_WEAK_SYMBOLS
+#if OPAL_HAVE_WEAK_ALIASES
 #pragma weak MPI_GROUP_EXCL = ompi_group_excl_f
 #pragma weak mpi_group_excl = ompi_group_excl_f
 #pragma weak mpi_group_excl_ = ompi_group_excl_f
@@ -53,17 +55,13 @@ OMPI_GENERATE_F77_BINDINGS (PMPI_GROUP_EXCL,
 #pragma weak MPI_Group_excl_f = ompi_group_excl_f
 #pragma weak MPI_Group_excl_f08 = ompi_group_excl_f
 #else
-#if ! OMPI_BUILD_MPI_PROFILING
-OMPI_GENERATE_F77_BINDINGS (MPI_GROUP_EXCL,
+OMPI_GENERATE_WEAK_F77_BINDINGS (MPI_GROUP_EXCL,
                            mpi_group_excl,
                            mpi_group_excl_,
                            mpi_group_excl__,
                            ompi_group_excl_f,
                            (MPI_Fint *group, MPI_Fint *n, MPI_Fint *ranks, MPI_Fint *newgroup, MPI_Fint *ierr),
                            (group, n, ranks, newgroup, ierr) )
-#else
-#define ompi_group_excl_f pompi_group_excl_f
-#endif
 #endif
 
 
@@ -89,4 +87,6 @@ void ompi_group_excl_f(MPI_Fint *group, MPI_Fint *n,
   if (MPI_SUCCESS == c_ierr) {
       *newgroup = c_newgroup->grp_f_to_c_index;
   }
+
+  OMPI_ARRAY_FINT_2_INT_CLEANUP(ranks);
 }

@@ -1,0 +1,321 @@
+Open MPI v6.1.x series
+======================
+
+This file contains all the NEWS updates for the Open MPI v6.1.x
+series, in reverse chronological order.
+
+Open MPI version v6.1.0
+--------------------------
+:Date: ...fill me in...
+
+- ``coll/ucc`` now creates a UCC context per family of communicators
+  instead of one per process over ``MPI_COMM_WORLD``.  MPI Sessions
+  programs that never create ``MPI_COMM_WORLD`` can use UCC, and a
+  derived communicator shares the context of any live communicator
+  whose process group contains all of its processes -- in the usual
+  case ``MPI_COMM_WORLD``'s -- so creating communicators costs no
+  additional context.  A communicator's UCC team is destroyed when the
+  communicator is; contexts are destroyed, and the UCC library
+  finalized, at the end of the job.  A failure to create a
+  context or a team now disables UCC for that communicator only, which
+  uses the other collective components; previously one failure
+  disabled UCC for the rest of the process.  Communicators created by
+  ``MPI_Comm_idup`` enable UCC at their first blocking collective.  The new
+  MCA parameters ``coll_ucc_max_domains``, ``coll_ucc_domain_reuse``,
+  ``coll_ucc_team_post_agreement``, ``coll_ucc_team_create_timeout``,
+  ``coll_ucc_team_destroy_timeout``
+  and ``coll_ucc_sessions_teardown`` control this behaviour.
+
+- When the UCC library includes the SHARP transport, ``coll/ucc`` now
+  uses SHARP for ``MPI_COMM_WORLD`` only.  Other communicators use a
+  second UCC context without SHARP, so they take no SHARP resources
+  and are faster to create.  A communicator asks for SHARP by being
+  created with the info key ``ompi_comm_coll_ucc_sharp`` set to
+  ``true`` (for example with ``MPI_Comm_dup_with_info``); setting the
+  MCA parameter ``coll_ucc_derived_sharp`` to ``true`` restores SHARP
+  on every communicator.  See :ref:`label-coll-ucc-sharp` for the
+  rules.
+
+- Updated the embedded hwloc to v2.15.0.
+
+- ``MPI_T_cvar_handle_alloc`` now reports a count large enough for the
+  current value of a string control variable, and ``MPI_T_cvar_read``
+  never writes more than that count.  Previously the count was always
+  2048, and reading a longer string overflowed the tool's buffer.
+
+- **Build System**: Open MPI now requires Autoconf 2.69 or later for
+  developers building from Git or modifying the build system. Released
+  tarballs remain unaffected. This update enables adoption of modern
+  Fortran compiler detection macros in subsequent changes.
+
+- ``MPI_Comm_connect``, ``MPI_Comm_accept`` and ``MPI_Comm_spawn`` now
+  detect that the two jobs are running different versions of Open MPI,
+  or that they selected different PMLs, and fail with a message naming
+  both instead of failing obscurely later.  The two roots find this
+  out through the information they already exchange on the port, which
+  now leads with the version and the PML.  Connecting two jobs has
+  always required both to be running the same version of Open MPI --
+  the content of that exchange is internal and has never been
+  compatible across versions -- and a connect against Open MPI v6.0.x
+  or earlier will now say so on this side.  The older side cannot read
+  what this one publishes and may fail less gracefully.
+
+- ``MPI_Comm_connect``, ``MPI_Comm_accept`` and ``MPI_Comm_spawn`` now
+  hand the procs of the job they connected to the PML as one group,
+  rather than leaving each to be wired individually the first time it
+  is sent to.  The count passed along with them had always been zero,
+  so none of them were handed over at all.  One consequence is
+  user-visible: a dynamic peer that a process has no network to reach
+  now fails the connect on that process, naming the peer, where before
+  the failure waited for a send to it and arrived as a crash in the
+  sending process rather than as an error.
+
+- Open MPI no longer forces a specific Libevent back-end; Libevent now
+  picks the best mechanism available on the platform (for example,
+  ``kqueue`` on macOS and ``epoll`` on Linux).  Open MPI previously
+  forced ``select`` on macOS and ``poll`` on most other platforms, to
+  work around 2008-era problems using the scalable mechanisms with
+  pseudo-terminals.  Those problems no longer apply: the pseudo-terminals
+  in question belong to PRRTE's I/O forwarding, which does not consult
+  this setting.  The ``opal_event_include`` MCA parameter still allows a
+  specific mechanism to be selected.  Its default is now empty, which
+  means that Libevent chooses (``all`` is also still accepted with the
+  same meaning).
+
+- Fixed every MPI process crashing in ``MPI_Init()`` on macOS when Open
+  MPI was built against a macOS SDK newer than the OS it runs on -- for
+  example, the Command Line Tools installing the macOS 27 SDK on a macOS
+  26 machine.  ``pipe2()`` is declared by the newer SDK but is absent
+  from the older OS, and the bundled Libevent's ``configure`` concluded
+  it was usable, so Libevent called a symbol that resolves to NULL at
+  run time.  The bundled Libevent is now always built to use its
+  portable ``pipe()`` fallback on macOS.  See
+  https://github.com/open-mpi/ompi/issues/14462 for the full analysis.
+
+- ``MPI_Init`` with the default ``ob1`` PML no longer waits for the
+  connection-info modex or calls BTL ``add_procs`` unless a selected
+  transport requires a synchronizing initialization (for example
+  ``usnic``). The first send or receive to a peer constructs that
+  endpoint once the peer's modex is local; an ``MPI_Isend`` posted
+  earlier is staged in the PML until then.
+
+- Added the ``btl_tcp_connect_mode`` MCA parameter (``lazy``,
+  ``sync_init``, ``full``) to select when the TCP BTL constructs
+  peer endpoints relative to ``MPI_Init``.
+
+- The BTL interface is now version 3.4.0. The last argument of
+  ``btl_add_procs()`` changed meaning: it is no longer a reachability
+  bit per process, but a two-bit status per process, set with
+  ``MCA_BTL_PROC_STATUS_SET()``, that also distinguishes a process
+  whose connection information has not arrived yet from one this BTL
+  cannot reach. The argument kept its type, so a BTL outside the Open
+  MPI tree that still calls ``opal_bitmap_set_bit()`` on it will
+  compile and misreport; such components must be updated.
+
+- Fixed ``btl/smcuda`` reporting every node-local peer as unreachable,
+  or hanging on first communication, since ``MPI_Init`` stopped calling
+  ``add_procs`` eagerly.  ``smcuda`` now requires a synchronizing
+  initialization, and a GPU-enabled application (CUDA or ROCM) using the
+  ``smcuda`` BTL will now wait for the connection-info modex during
+  ``MPI_Init`` again.  ``--mca btl ^smcuda`` restores the deferred wire-up.
+
+- The ``btl/smcuda`` component now gates its startup on a new
+  ``btl_smcuda_enable`` MCA parameter.  A negative value (default)
+  starts the component only when ``smcuda`` is explicitly listed via
+  ``--mca btl smcuda``; ``0`` disables it unconditionally; a positive
+  value enables it unconditionally.  When the component does not start, it no longer
+  creates its shared-memory backing files, which previously happened
+  even when ``smcuda`` was not ultimately selected.
+
+- Fixed ``btl/tcp`` failing to connect, or hanging, on nodes that have an
+  interface whose IP address is not unique across the job -- a container
+  bridge such as ``docker0``, which is commonly ``172.17.0.1`` on every
+  node, is the usual cause.  Such an address was preferred when pairing
+  local and remote interfaces, because being identical it appeared to be
+  the best possible match, and it is in fact unusable: a connection to it
+  never leaves the node, and a connection from it is answered to the
+  peer's own copy of the address.  Both the address and the local
+  interface that holds it are now excluded when the peer is on another
+  node.
+
+- Fixed wrong answers from one-sided (RMA) accumulate operations on a
+  window with one MPI process per node, when the network does not
+  guarantee that its atomics and CPU atomics are atomic with respect to
+  each other.  A process performed atomics on its own window memory
+  directly while other processes reached the same memory with network
+  atomics, which is the mixing that guarantee exists to prevent.
+
+- Fixed wrong answers from one-sided (RMA) operations on a window
+  allocated with ``MPI_Win_allocate`` when the target is a process on the
+  same node but the operation is carried out by the underlying transport
+  rather than with CPU atomics.  In that case ``osc/rdma`` described the
+  target's memory with an address taken from the calling process's own
+  mapping of the shared segment, while pairing it with the memory
+  registration of a different process, so the transport could read or
+  write the wrong location.  ``MPI_Win_shared_query`` on such a window
+  continues to report an address that is valid in the calling process.
+
+- One-sided (RMA) windows on networks without hardware atomics --
+  ``btl/tcp``, for example -- are dramatically faster when more than one
+  MPI process shares a node.  The ``osc/rdma`` component now applies its
+  shared state optimization whenever the underlying transport guarantees
+  that CPU atomics and transport atomics are atomic with respect to each
+  other, which includes the emulated atomics used on such networks.
+  Previously the optimization was disabled for these transports, so
+  every window-state atomic issued by a process was routed to another
+  process on the same node and executed as a network round trip.
+
+- OpenSHMEM static symmetric storage is now limited to writable loadable
+  segments of the main executable.  Unrelated mappings, including private
+  anonymous mappings, are excluded.
+
+- OpenSHMEM now validates peer memheap layouts before remote-key state is
+  used.  Incompatible peer layouts abort initialization with a diagnostic.
+
+- Nonblocking file I/O no longer loses data when the operating system's
+  asynchronous I/O queue fills, which on macOS it readily does: the
+  ``posix`` ``fbtl`` component sized its batch of concurrent ``aio_write``
+  calls from ``sysconf(_SC_AIO_MAX)``, which there reports the
+  machine-wide ``kern.aiomax`` (90 by default) rather than the
+  ``kern.aioprocmax`` a single process is held to (16).  The component
+  now bounds the batch by the per-process limit, defers requests the
+  queue will not accept instead of discarding them, and reaps the
+  operations it has posted before releasing their control blocks -- an
+  unreaped operation used to cost the process a queue slot permanently,
+  so one refusal disabled nonblocking file I/O for the rest of its life.
+  The new ``fbtl_posix_max_aio_reqs`` MCA parameter overrides the limit.
+  A nonblocking operation the ``fbtl`` cannot post is now reported as
+  ``MPI_ERR_IO``; previously ``MPI_File_iwrite_all`` and ``MPI_Wait``
+  both returned ``MPI_SUCCESS`` for a write that never reached the file.
+
+- Reporting an error for a failed nonblocking file operation no longer
+  crashes the process.  ``MPI_Wait`` and ``MPI_Test`` reach a file's
+  error handler through the request, and a nonblocking file request did
+  not record which file it came from, so invoking the error handler
+  dereferenced a null pointer.
+
+- Fixed the ``INTENT`` for the ``info_used`` parameter of ``MPI_Win_get_info``,
+  the ``errhandler`` parameter of ``MPI_Session_set_errhandler`` and the
+  ``flag`` parameter of ``MPI_Parrived`` in the ``use mpi`` Fortran
+  bindings.
+
+- Adjusted many Fortran ``use mpi`` API bindings to use the argument
+  names as defined by the standard. Calling these functions using
+  argument keywords will now require the standard-conformant naming
+  scheme.
+
+- ``MPI_Info_create_env`` no longer reports fields that were never
+  filled in.  Before ``MPI_Init`` it answered ``maxprocs``, ``soft`` and
+  ``ompi_num_apps`` as ``0``, and ``thread_level`` as
+  ``MPI_THREAD_SINGLE`` although no level had been requested.  A field
+  the run-time has not supplied is now left out of the object, which
+  ``MPI_Info_get`` reports as *flag* = false, before ``MPI_Init`` and
+  after ``MPI_Finalize`` alike.  A Sessions-only program requests no
+  world thread level, so ``thread_level`` is now absent for it.
+
+- The name Open MPI reports for the local node no longer changes at
+  ``MPI_Init``: it is the ``gethostname()`` result throughout, matching
+  ``MPI_Get_processor_name``.  ``MPI_Init`` used to replace it with the
+  run-time's name for the node, which on macOS differs by a ``.local``
+  suffix, so ``host`` in ``MPI_INFO_ENV`` and the host name in Open
+  MPI's error messages changed mid-run.  Peers are still named by the
+  run-time.
+
+- ``MPI_Info_set`` now accepts a zero-length (empty) value string.  It
+  previously raised ``MPI_ERR_INFO_VALUE`` for an empty value, but
+  MPI-5.0 chapter 10 only limits the *maximum* length of an info
+  value, and gives the empty string a defined meaning for the
+  ``mpi_memory_alloc_kinds`` info key.  Empty *keys* remain invalid.
+
+- Partitioned communication fixes:
+
+  - ``MPI_Parrived`` now returns ``flag = true`` for a null request
+    (``MPI_REQUEST_NULL``) and for an inactive request, as required by
+    MPI-5.0 section 4.2.2.  It previously raised ``MPI_ERR_REQUEST`` for
+    a null request and returned ``flag = false`` for a partitioned
+    receive request that had never been started.
+
+  - ``MPI_Psend_init`` and ``MPI_Precv_init`` now accept
+    ``MPI_PROC_NULL`` as the peer rank, per MPI-5.0 section 3.10.  Such
+    a request completes as soon as it is started, ``MPI_Pready`` on it
+    has no effect, and ``MPI_Parrived`` reports every partition as
+    arrived.  Previously, ``MPI_PROC_NULL`` was passed down as if it
+    were a real peer rank, reading outside the communicator's process
+    array.
+
+  - Freeing a partitioned communication request that was never started
+    no longer leaves its internal setup receive posted.  Such a stale
+    receive could consume the setup message of the next partitioned
+    operation using the same communicator, peer, and tag, which then
+    never completed.
+
+- Implemented ``MPI_Get_hw_resource_info()`` using hwloc. The returned
+  info object now reports whether the calling process is restricted to
+  individual NUMA nodes, packages, caches, cores, and processing units.
+  The reported ``hwloc://`` resource keys can also be used with
+  ``MPI_Comm_split_type()`` for hardware- and resource-guided communicator
+  creation. Thanks to Musawer Ahmad Saqif for the contribution.
+
+- Renamed the ``--enable-weak-symbols`` configure option to
+  ``--enable-weak-aliases``, which more accurately reflects the linker
+  feature (weak symbol *aliases*) that Open MPI actually tests for and
+  uses.  ``--enable-weak-symbols`` is retained as a deprecated synonym.
+
+- The documentation now publishes machine-readable, LLM-friendly
+  artifacts for the public MPI APIs alongside the human-facing HTML and
+  man pages: a JSONL API catalog, aggregate and per-interface Markdown
+  corpora, per-symbol Markdown pages, curated examples, an interface
+  guide, an ``ompi_info`` runtime-introspection guide (how to query an
+  installed Open MPI for its version, configuration, components, and
+  run-time MCA parameters), and a manifest, all indexed from
+  ``llms.txt``. See the "LLM-friendly documentation artifacts" page in
+  the developer documentation.
+
+- Added support for the MPI-5.0 standard ABI (Application Binary Interface)
+  as defined in Chapter 20 of the MPI-5.0 specification. This includes the
+  creation of a new ``libmpi_abi.so`` library and the ``mpicc_abi`` wrapper
+  compiler for building C applications against the MPI-5 ABI. Note that
+  Fortran ABI support is not yet included. Which ABIs are built is
+  selected with the new ``--enable-mpi-abi=MODE`` configure option
+  (``MODE`` is ``both`` (the default), ``standard``/``forum``, or
+  ``ompi``); the older ``--enable-standard-abi`` and ``--disable-ompi-abi``
+  options are retained as deprecated synonyms.
+
+- ``MPI_Abi_set_fortran_info`` now configures the sizes of the Fortran
+  datatypes when Open MPI is built with ``--disable-mpi-fortran``.  In
+  such a build the implementation does not know the Fortran compiler's
+  type properties, so ``MPI_Abi_get_fortran_info`` returns
+  ``MPI_INFO_NULL`` and the application supplies them through an info
+  object.  After a successful ``MPI_Abi_set_fortran_info``,
+  ``MPI_Type_size`` of ``MPI_INTEGER``, ``MPI_REAL``, ``MPI_LOGICAL``,
+  ``MPI_DOUBLE_PRECISION``, ``MPI_CHARACTER``, ``MPI_COMPLEX``,
+  ``MPI_DOUBLE_COMPLEX`` and the optional
+  fixed-size Fortran datatypes (``MPI_INTEGER4``, ``MPI_REAL8``,
+  ``MPI_COMPLEX16``, etc.) marked supported in the info object reports
+  the requested size instead of ``MPI_UNDEFINED``.  Previously the call
+  recorded the info object but left every Fortran datatype unavailable.
+  The composite Fortran types (``MPI_2INTEGER``, ``MPI_2REAL``,
+  ``MPI_2DOUBLE_PRECISION``, ``MPI_2COMPLEX``, ``MPI_2DOUBLE_COMPLEX``)
+  are not covered by the standard info keys and remain unavailable in a
+  ``--disable-mpi-fortran`` build.
+
+- Fixed ``MPI_Comm_idup`` hanging, or completing other nonblocking
+  collectives with wrong results, when the application posted further
+  nonblocking collectives or created another communicator on the parent
+  communicator while the ``MPI_Comm_idup`` request was outstanding.  The
+  context-id negotiation of a nonblocking duplicate now runs over
+  point-to-point messages with a tag reserved when ``MPI_Comm_idup`` is
+  called, instead of sharing the parent's nonblocking-collective stream
+  with the application.
+
+- Added a ``hook:hwpc_cxi`` component, controlled by the new
+  ``--enable-hwpc-cxi`` configure option (default: enabled), that
+  collects and reports HPE Cassini (CXI) hardware performance counters
+  for Slingshot 11 (or newer) environments.  Collection is opt-in: the
+  ``hook_hwpc_cxi_counter_report`` MCA parameter defaults to ``0``, and
+  enabling it on a node without a Cassini device aborts the job. See the "HPE Cassini (CXI)
+  Hardware Performance Counters (HWPC)" page in the features
+  documentation for the new ``hook_hwpc_cxi_counter_*`` MCA parameters,
+  including an option to enable registration of CXI counters as MPI_T
+  performance variables without affecting collection or reporting (it
+  requires ``hook_hwpc_cxi_counter_report`` of ``1`` or higher).

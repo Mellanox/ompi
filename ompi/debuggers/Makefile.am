@@ -16,6 +16,7 @@
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 noinst_LTLIBRARIES = libdebuggers.la libompi_debugger_canary.la
@@ -45,13 +46,13 @@ headers = \
 
 dlopen_test_SOURCES = dlopen_test.c
 dlopen_test_LDADD = \
-        $(top_builddir)/ompi/lib@OMPI_LIBMPI_NAME@.la \
+        $(top_builddir)/ompi/lib@OMPI_MAKE_CHECK_LIBMPI_NAME@.la \
         $(top_builddir)/opal/lib@OPAL_LIB_NAME@.la
 dlopen_test_DEPENDENCIES = $(ompi_predefined_LDADD)
 
 predefined_gap_test_SOURCES = predefined_gap_test.c
 predefined_gap_test_LDFLAGS = $(WRAPPER_EXTRA_LDFLAGS)
-predefined_gap_test_LDADD = $(top_builddir)/ompi/lib@OMPI_LIBMPI_NAME@.la
+predefined_gap_test_LDADD = $(top_builddir)/ompi/lib@OMPI_MAKE_CHECK_LIBMPI_NAME@.la
 predefined_gap_test_DEPENDENCIES = $(ompi_predefined_LDADD)
 
 libdebuggers_la_SOURCES = \
@@ -79,7 +80,7 @@ libompi_dbg_msgq_la_LDFLAGS = -module -avoid-version
 # and "make check" will *build* a test in runtime/, but it won't *run*
 # it.  :-(
 predefined_pad_test_LDFLAGS = $(WRAPPER_EXTRA_LDFLAGS)
-predefined_pad_test_LDADD = $(top_builddir)/ompi/lib@OMPI_LIBMPI_NAME@.la
+predefined_pad_test_LDADD = $(top_builddir)/ompi/lib@OMPI_MAKE_CHECK_LIBMPI_NAME@.la
 predefined_pad_test_DEPENDENCIES = $(ompi_predefined_LDADD)
 
 # Conditionally install the header files

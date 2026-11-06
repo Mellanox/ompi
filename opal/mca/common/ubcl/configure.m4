@@ -1,11 +1,12 @@
 # -*- shell-script -*-
 #
-# Copyright (c) 2024      Bull S.A.S. All rights reserved.
+# Copyright (c) 2024-2026 Bull S.A.S. All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
 #
 # $HEADER$
+# SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 #
 
 AC_DEFUN([MCA_opal_common_ubcl_CONFIG],[
@@ -15,6 +16,8 @@ AC_DEFUN([MCA_opal_common_ubcl_CONFIG],[
                     [common_ubcl_happy="yes"],
                     [common_ubcl_happy="no"])
 
+    # opal/mca/common/ubcl does not handle any UBCL symbols
+    common_ubcl_LDFLAGS=""
 
     AS_IF([test "$common_ubcl_happy" = "yes"],
           [$1],

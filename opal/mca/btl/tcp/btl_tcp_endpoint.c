@@ -15,13 +15,15 @@
  * Copyright (c) 2014      Intel, Inc.  All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
- * Copyright (c) 2018-2020 Amazon.com, Inc. or its affiliates.  All Rights reserved.
+ * Copyright (c) 2018-2026 Amazon.com, Inc. or its affiliates.  All Rights reserved.
  * Copyright (c) 2020      Google, LLC. All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
  *
  * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
  *
  */
 
@@ -168,7 +170,11 @@ void mca_btl_tcp_endpoint_dump(int level, const char *fname, int lineno, const c
         }
     }
 #    else
-    used += snprintf(&outmsg[used], DEBUG_LENGTH - used, "%s -", inet_ntoa(inaddr.sin_addr));
+    {
+        char ep_addr[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &inaddr.sin_addr, ep_addr, sizeof(ep_addr));
+        used += snprintf(&outmsg[used], DEBUG_LENGTH - used, "%s -", ep_addr);
+    }
     if (used >= DEBUG_LENGTH)
         goto out;
 #    endif
@@ -184,7 +190,11 @@ void mca_btl_tcp_endpoint_dump(int level, const char *fname, int lineno, const c
         }
     }
 #    else
-    used += snprintf(&outmsg[used], DEBUG_LENGTH - used, " %s", inet_ntoa(inaddr.sin_addr));
+    {
+        char ep_addr[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &inaddr.sin_addr, ep_addr, sizeof(ep_addr));
+        used += snprintf(&outmsg[used], DEBUG_LENGTH - used, " %s", ep_addr);
+    }
     if (used >= DEBUG_LENGTH)
         goto out;
 #    endif
@@ -397,23 +407,6 @@ int mca_btl_tcp_endpoint_send(mca_btl_base_endpoint_t *btl_endpoint, mca_btl_tcp
 }
 
 /*
- * A blocking send on a non-blocking socket. Used to send the small
- * amount of connection information that identifies the endpoints endpoint.
- */
-static int mca_btl_tcp_endpoint_send_blocking(mca_btl_base_endpoint_t *btl_endpoint,
-                                              const void *data, size_t size)
-{
-    int ret = mca_btl_tcp_send_blocking(btl_endpoint->endpoint_sd, data, size);
-    if (ret < 0) {
-        /* send-lock not needed because never called when the socket is in the
-         * event set. */
-        btl_endpoint->endpoint_state = MCA_BTL_TCP_FAILED;
-        mca_btl_tcp_endpoint_close(btl_endpoint);
-    }
-    return ret;
-}
-
-/*
  * Send the globally unique identifier for this process to a endpoint on
  * a newly connected socket.
  */
@@ -427,13 +420,58 @@ static int mca_btl_tcp_endpoint_send_connect_ack(mca_btl_base_endpoint_t *btl_en
     hs_msg.guid = guid;
 
     if (sizeof(hs_msg)
-        != mca_btl_tcp_endpoint_send_blocking(btl_endpoint, &hs_msg, sizeof(hs_msg))) {
+        != mca_btl_tcp_send_blocking(btl_endpoint->endpoint_sd, &hs_msg, sizeof(hs_msg))) {
         opal_show_help("help-mpi-btl-tcp.txt", "client handshake fail", true,
                        opal_process_info.nodename, sizeof(hs_msg),
                        "connect ACK failed to send magic-id and guid");
         return OPAL_ERR_UNREACH;
     }
     return OPAL_SUCCESS;
+}
+
+/*
+ * Tell the peer that this socket is going away on purpose, so that its
+ * end of it reads as a clean close rather than as a process that died.
+ * Best effort: a failed write means the peer has already gone, which is
+ * what the message would have told it.
+ */
+static void mca_btl_tcp_endpoint_send_fin(mca_btl_base_endpoint_t *btl_endpoint)
+{
+    mca_btl_tcp_hdr_t fin_msg = {
+        .base.tag = 0,
+        .type = MCA_BTL_TCP_HDR_TYPE_FIN,
+        .count = 0,
+        .size = 0,
+    };
+
+    (void) mca_btl_tcp_send_blocking(btl_endpoint->endpoint_sd, &fin_msg, sizeof(fin_msg));
+}
+
+/*
+ * Has the peer already abandoned this incoming connection?
+ *
+ * Between the handshake the component consumed and the ack we are about
+ * to write, a dialer says nothing: mca_btl_tcp_endpoint_send() queues
+ * fragments until MCA_BTL_TCP_CONNECTED, which is what our ack brings
+ * about. So anything readable here is the peer letting go of this socket
+ * -- its goodbye, or the bare eof of one it dropped during a
+ * simultaneous-connect duel before we taught it to say so, or a reset.
+ * Adopting one of those yields a connection that dies without ever
+ * carrying anything, which every path below reads as a failed peer.
+ */
+static bool mca_btl_tcp_endpoint_abandoned(int sd)
+{
+    char byte;
+    ssize_t rc;
+
+    do {
+        rc = recv(sd, &byte, 1, MSG_PEEK);
+    } while ((rc < 0) && (EINTR == opal_socket_errno));
+
+    if (0 <= rc) {
+        return true;
+    }
+    return (EWOULDBLOCK != opal_socket_errno) && (EAGAIN != opal_socket_errno);
 }
 
 static void *mca_btl_tcp_endpoint_complete_accept(int fd, int flags, void *context)
@@ -471,6 +509,30 @@ static void *mca_btl_tcp_endpoint_complete_accept(int fd, int flags, void *conte
                                opal_proc_local_get()->proc_name);
     if ((btl_endpoint->endpoint_sd < 0)
         || (btl_endpoint->endpoint_state != MCA_BTL_TCP_CONNECTED && cmpval < 0)) {
+        if (mca_btl_tcp_endpoint_abandoned(btl_endpoint->endpoint_sd_next)) {
+            MCA_BTL_TCP_ENDPOINT_DUMP(10, btl_endpoint, true,
+                                      "discarded, peer let go [endpoint_accept]");
+            CLOSE_THE_SOCKET(btl_endpoint->endpoint_sd_next);
+            btl_endpoint->endpoint_sd_next = -1;
+            /* Discarded rather than adopted, so we may now have nothing at
+             * all. The peer is not coming back for one -- it just let go --
+             * so go back to CLOSED, and dial if we have something waiting,
+             * which is the work adopting would have restarted. */
+            if (btl_endpoint->endpoint_sd < 0) {
+                btl_endpoint->endpoint_state = MCA_BTL_TCP_CLOSED;
+                if (!opal_list_is_empty(&btl_endpoint->endpoint_frags)) {
+                    (void) mca_btl_tcp_endpoint_start_connect(btl_endpoint);
+                }
+            }
+            goto unlock_and_return;
+        }
+        if (MCA_BTL_TCP_CONNECT_ACK == btl_endpoint->endpoint_state) {
+            /* Our own dial, dropped here in the peer's favour. Our handshake
+             * is on it, so the peer may be holding it as a queued duplicate
+             * and may still adopt it; silence would read there as a process
+             * that died. */
+            mca_btl_tcp_endpoint_send_fin(btl_endpoint);
+        }
         mca_btl_tcp_endpoint_close(btl_endpoint);
         btl_endpoint->endpoint_sd = btl_endpoint->endpoint_sd_next;
         btl_endpoint->endpoint_sd_next = -1;
@@ -553,13 +615,7 @@ void mca_btl_tcp_endpoint_close(mca_btl_base_endpoint_t *btl_endpoint)
     /* send a message before closing to differentiate between failures and
      * clean disconnect during finalize */
     if (MCA_BTL_TCP_CONNECTED == btl_endpoint->endpoint_state) {
-        mca_btl_tcp_hdr_t fin_msg = {
-            .base.tag = 0,
-            .type = MCA_BTL_TCP_HDR_TYPE_FIN,
-            .count = 0,
-            .size = 0,
-        };
-        mca_btl_tcp_endpoint_send_blocking(btl_endpoint, &fin_msg, sizeof(fin_msg));
+        mca_btl_tcp_endpoint_send_fin(btl_endpoint);
     }
 
     CLOSE_THE_SOCKET(btl_endpoint->endpoint_sd);
@@ -771,6 +827,37 @@ static int mca_btl_tcp_endpoint_start_connect(mca_btl_base_endpoint_t *btl_endpo
 
     /* start the connect - will likely fail with EINPROGRESS */
     mca_btl_tcp_proc_tosocks(btl_endpoint->endpoint_addr, &endpoint_addr);
+
+    /* Ask the kernel to leave the local port unassigned until connect().
+     *
+     * The bind() below exists to pin the source address, not the source
+     * port: the port in tcp_ifaddr is zero.  Without this option the
+     * kernel must therefore choose an ephemeral port while the
+     * destination is still unknown, and can only keep it unique across
+     * the local address rather than across the whole connection tuple.
+     * Every rank on a node draws from that one space, and ports left in
+     * TIME_WAIT by earlier connections stay in it, so a job with many
+     * ranks per node and many peers each can exhaust it long before the
+     * tuple space is anywhere near full -- bind() then fails with
+     * EADDRINUSE and the endpoint is lost.  Deferring the choice to
+     * connect(), where the tuple is known, lets one local port serve any
+     * number of distinct destinations.
+     *
+     * A kernel that does not support this simply keeps the old behavior,
+     * so a failure here is not fatal.
+     */
+#if defined(IP_BIND_ADDRESS_NO_PORT)
+    {
+        int no_port = 1;
+        if (setsockopt(btl_endpoint->endpoint_sd, IPPROTO_IP, IP_BIND_ADDRESS_NO_PORT,
+                       (const char *) &no_port, sizeof(no_port))
+            < 0) {
+            opal_output_verbose(10, opal_btl_base_framework.framework_output,
+                                "btl: tcp: could not set IP_BIND_ADDRESS_NO_PORT: %s (%d)",
+                                strerror(opal_socket_errno), opal_socket_errno);
+        }
+    }
+#endif
 
     /* Bind the socket to one of the addresses associated with
      * this btl module.  This sets the source IP to one of the
