@@ -5,7 +5,7 @@
 .. SPDX-License-Identifier: BSD-3-Clause-Open-MPI
 
 HPC-X downstream branch
-======================
+=======================
 
 These settings apply to the ``v6.0.x_hpcx`` downstream branch.  They
 are not defaults of the upstream Open MPI v6.0.x branch.
