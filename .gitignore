@@ -185,6 +185,9 @@ ompi/mca/coll/ml/coll_ml_lex.c
 ompi/mca/coll/self/coll-self-version.h*
 ompi/mca/coll/sm/coll-sm-version.h*
 
+ompi/mca/hook/hwpc_cxi/test/hwpc_cxi_*_test
+ompi/mca/hook/hwpc_cxi/test/hwpc_cxi_level5_*
+
 ompi/mca/osc/monitoring/osc_monitoring_template_gen.h
 
 ompi/mca/pml/v/autogen.vprotocols
@@ -227,6 +230,7 @@ ompi/mpi/tool/profile/*.c
 
 ompi/test/t/mpi_t_category_get_events
 ompi/test/t/mpi_t_concurrent_init
+ompi/test/t/mpi_t_cvar_read_long_string
 ompi/test/t/mpi_t_errcodes
 ompi/test/t/mpi_t_event_14019
 ompi/test/t/mpi_t_event_comm_name
@@ -277,6 +281,7 @@ ompi/test/datatype/to_self
 ompi/test/datatype/unpack_ooo
 
 ompi/test/general/abi_fortran
+ompi/test/general/abi_fortran_f08
 ompi/test/general/attr_interlang_mpifh
 ompi/test/general/attr_interlang_mpifh.f90
 ompi/test/general/attr_interlang_usempi
@@ -289,6 +294,7 @@ ompi/test/general/datatype
 ompi/test/general/errhandler
 ompi/test/general/file
 ompi/test/general/group
+ompi/test/general/hw_resource_info
 ompi/test/general/info_mpi
 ompi/test/general/info_t
 ompi/test/general/instance
@@ -351,6 +357,8 @@ ompi/tools/wrappers/ompi-forum-abi.pc
 ompi/tools/wrappers/mpicxx-wrapper-data.txt
 ompi/tools/wrappers/mpif77-wrapper-data.txt
 ompi/tools/wrappers/mpif90-wrapper-data.txt
+ompi/tools/wrappers/mpicc_abi_only-wrapper-data.txt
+ompi/tools/wrappers/mpic++_abi_only-wrapper-data.txt
 
 opal/asm/atomic-asm.S
 opal/asm/atomic-test
@@ -395,6 +403,7 @@ ompi/test/mpirun/session_first_touch
 ompi/test/mpirun/session_partial_batch
 ompi/test/mpirun/spawn_first_touch
 ompi/test/mpirun/tcp_stranger_connect
+ompi/test/mpirun/thread_sendrecv
 ompi/test/mpirun/wireup_stress
 
 test/simple/abort
@@ -454,6 +463,7 @@ test/simple/debugger
 test/simple/server_port_name.txt
 test/simple/singleton_client_server
 test/simple/intercomm_create
+test/simple/create_from_group_first_msg
 test/simple/spawn_tree
 test/simple/init-exit77
 test/simple/mpi_info
