@@ -22,7 +22,7 @@ include $(top_srcdir)/Makefile.mca-dso-check
 
 # A self-contained copy of the test/support harness so that these tests
 # do not depend on the top-level test/ tree.
-EXTRA_DIST = README.md attr_interlang_source.F90 values-f.h
+EXTRA_DIST = README.md attr_interlang_source.F90 abi_fortran_f08.f90 values-f.h
 
 check_LIBRARIES = libompitest_support.a
 libompitest_support_a_SOURCES = support.c support.h
@@ -30,6 +30,38 @@ libompitest_support_a_SOURCES = support.c support.h
 # NOTE: test program names must avoid Automake's built-in recursive
 # target names (info, dvi, ps, pdf, html, tags, check, ...).  The
 # ompi/info test is therefore named "info_t" rather than "info".
+#
+# In ABI-only mode (--disable-ompi-abi) only libmpi_abi is built, so we
+# build just the subset of tests that use only the public MPI C API.
+# They are compiled with -DMPI_ABI (see AM_CPPFLAGS below) exactly as
+# the mpicc_abi wrapper does, which makes <mpi.h> resolve to the MPI
+# Forum ABI header, and are linked against libmpi_abi (see
+# ompi_test_ldadd).  The tests omitted here call internal OMPI routines
+# directly (e.g. ompi_info_get(), ompi_datatype_*(), ompi_seq_tracker_*)
+# or exercise Open MPI-specific state (datatype, proc, info_t, info_mpi,
+# seq_tracker), and abi_fortran needs the Fortran bindings that are
+# disabled in ABI-only mode.
+if OMPI_STANDARD_ABI_ONLY
+check_PROGRAMS = \
+	mpi_init \
+	op \
+	communicator \
+	group \
+	attribute \
+	errhandler \
+	request \
+	win \
+	instance \
+	file \
+	message \
+	hw_resource_info
+
+# Compile against the MPI Forum ABI header, as the mpicc_abi wrapper
+# does.  -DMPI_ABI makes <mpi.h> short-circuit to "standard_abi/mpi.h";
+# that header is generated in the build tree under ompi/mpi/c, so add it
+# to the include path.
+AM_CPPFLAGS = -DMPI_ABI -I$(top_builddir)/ompi/mpi/c
+else
 check_PROGRAMS = \
 	info_t \
 	seq_tracker \
@@ -49,6 +81,7 @@ check_PROGRAMS = \
 	message \
 	abi_fortran \
 	hw_resource_info
+endif
 
 TESTS = $(check_PROGRAMS)
 
@@ -60,11 +93,23 @@ TESTS = $(check_PROGRAMS)
 # linker does not always pull it in transitively (e.g. in some
 # uninstalled "make check" / distro linker configurations), so link it
 # explicitly.  libopen-pal underlies both.
+#
+# In ABI-only mode libopen_mpi is not built: the public-API tests built
+# here reference only standard MPI_* entry points (plus a few OPAL
+# symbols in libopen-pal), so link libmpi_abi
+# (OMPI_MAKE_CHECK_LIBMPI_NAME) and libopen-pal only.
+if OMPI_STANDARD_ABI_ONLY
 ompi_test_ldadd = \
-        $(top_builddir)/ompi/lib@OMPI_LIBMPI_NAME@.la \
+        $(top_builddir)/ompi/lib@OMPI_MAKE_CHECK_LIBMPI_NAME@.la \
+        $(top_builddir)/opal/lib@OPAL_LIB_NAME@.la \
+        libompitest_support.a
+else
+ompi_test_ldadd = \
+        $(top_builddir)/ompi/lib@OMPI_MAKE_CHECK_LIBMPI_NAME@.la \
         $(top_builddir)/ompi/libopen_mpi.la \
         $(top_builddir)/opal/lib@OPAL_LIB_NAME@.la \
         libompitest_support.a
+endif
 
 info_t_SOURCES = info.c
 info_t_LDADD = $(ompi_test_ldadd)
@@ -174,7 +219,7 @@ attr_interlang_mpifh_CPPFLAGS = $(attr_interlang_cppflags)
 attr_interlang_mpifh_FCFLAGS = $(attr_interlang_fcflags)
 attr_interlang_mpifh_LDADD = \
 	$(top_builddir)/ompi/mpi/fortran/mpif-h/libmpi_mpifh.la \
-	$(top_builddir)/ompi/lib@OMPI_LIBMPI_NAME@.la \
+	$(top_builddir)/ompi/lib@OMPI_MAKE_CHECK_LIBMPI_NAME@.la \
 	$(top_builddir)/ompi/libopen_mpi.la \
 	$(top_builddir)/opal/lib@OPAL_LIB_NAME@.la
 attr_interlang_mpifh_DEPENDENCIES = $(attr_interlang_mpifh_LDADD)
@@ -192,11 +237,12 @@ attr_interlang_usempi_SOURCES = attr_interlang.c
 nodist_attr_interlang_usempi_SOURCES = attr_interlang_usempi.f90
 attr_interlang_usempi_CPPFLAGS = $(attr_interlang_cppflags)
 attr_interlang_usempi_FCFLAGS = $(attr_interlang_fcflags) \
-	-I$(top_builddir)/ompi/mpi/fortran/use-mpi-ignore-tkr
+	$(OMPI_FC_MODULE_FLAG)$(top_builddir)/ompi/mpi/fortran/use-mpi-ignore-tkr \
+	$(OMPI_FC_MODULE_FLAG)$(top_builddir)/ompi/mpi/fortran/use-mpi
 attr_interlang_usempi_LDADD = \
 	$(top_builddir)/ompi/mpi/fortran/use-mpi-ignore-tkr/libmpi_usempi_ignore_tkr.la \
 	$(top_builddir)/ompi/mpi/fortran/mpif-h/libmpi_mpifh.la \
-	$(top_builddir)/ompi/lib@OMPI_LIBMPI_NAME@.la \
+	$(top_builddir)/ompi/lib@OMPI_MAKE_CHECK_LIBMPI_NAME@.la \
 	$(top_builddir)/ompi/libopen_mpi.la \
 	$(top_builddir)/opal/lib@OPAL_LIB_NAME@.la
 attr_interlang_usempi_DEPENDENCIES = $(attr_interlang_usempi_LDADD)
@@ -214,12 +260,15 @@ attr_interlang_usempif08_SOURCES = attr_interlang.c
 nodist_attr_interlang_usempif08_SOURCES = attr_interlang_usempif08.f90
 attr_interlang_usempif08_CPPFLAGS = $(attr_interlang_cppflags)
 attr_interlang_usempif08_FCFLAGS = $(attr_interlang_fcflags) \
-	-I$(top_builddir)/ompi/mpi/fortran/use-mpi-f08
+	$(OMPI_FC_MODULE_FLAG)$(top_builddir)/ompi/mpi/fortran/use-mpi-f08 \
+	$(OMPI_FC_MODULE_FLAG)$(top_builddir)/ompi/mpi/fortran/use-mpi-f08/mod \
+	$(OMPI_FC_MODULE_FLAG)$(top_builddir)/ompi/mpi/fortran/use-mpi-ignore-tkr \
+	$(OMPI_FC_MODULE_FLAG)$(top_builddir)/ompi/mpi/fortran/use-mpi
 attr_interlang_usempif08_LDADD = \
 	$(top_builddir)/ompi/mpi/fortran/use-mpi-f08/libmpi_usempif08.la \
 	$(top_builddir)/ompi/mpi/fortran/use-mpi-ignore-tkr/libmpi_usempi_ignore_tkr.la \
 	$(top_builddir)/ompi/mpi/fortran/mpif-h/libmpi_mpifh.la \
-	$(top_builddir)/ompi/lib@OMPI_LIBMPI_NAME@.la \
+	$(top_builddir)/ompi/lib@OMPI_MAKE_CHECK_LIBMPI_NAME@.la \
 	$(top_builddir)/ompi/libopen_mpi.la \
 	$(top_builddir)/opal/lib@OPAL_LIB_NAME@.la
 attr_interlang_usempif08_DEPENDENCIES = $(attr_interlang_usempif08_LDADD)
@@ -233,6 +282,26 @@ attr_interlang_usempif08.f90: $(srcdir)/attr_interlang_source.F90
 	  -e 's/MPI_NULL_COPY_FN/MPI_COMM_NULL_COPY_FN/g' \
 	  -e 's/MPI_NULL_DELETE_FN/MPI_COMM_NULL_DELETE_FN/g' \
 	  $(srcdir)/attr_interlang_source.F90 > $@
+
+# mpi_f08 unit test for MPI_Abi_get/set_fortran_booleans.  Unlike the C
+# abi_fortran test, this one goes through the generated mpi_f08 bindings
+# and therefore exercises the LOGICAL_PTR / LOGICAL_PTR_OUT type machinery
+# in the Fortran binding generator.
+check_PROGRAMS += abi_fortran_f08
+abi_fortran_f08_SOURCES = abi_fortran_f08.f90
+abi_fortran_f08_FCFLAGS = \
+	$(OMPI_FC_MODULE_FLAG)$(top_builddir)/ompi/mpi/fortran/use-mpi-f08 \
+	$(OMPI_FC_MODULE_FLAG)$(top_builddir)/ompi/mpi/fortran/use-mpi-f08/mod \
+	$(OMPI_FC_MODULE_FLAG)$(top_builddir)/ompi/mpi/fortran/use-mpi-ignore-tkr \
+	$(OMPI_FC_MODULE_FLAG)$(top_builddir)/ompi/mpi/fortran/use-mpi
+abi_fortran_f08_LDADD = \
+	$(top_builddir)/ompi/mpi/fortran/use-mpi-f08/libmpi_usempif08.la \
+	$(top_builddir)/ompi/mpi/fortran/use-mpi-ignore-tkr/libmpi_usempi_ignore_tkr.la \
+	$(top_builddir)/ompi/mpi/fortran/mpif-h/libmpi_mpifh.la \
+	$(top_builddir)/ompi/lib@OMPI_LIBMPI_NAME@.la \
+	$(top_builddir)/ompi/libopen_mpi.la \
+	$(top_builddir)/opal/lib@OPAL_LIB_NAME@.la
+abi_fortran_f08_DEPENDENCIES = $(abi_fortran_f08_LDADD)
 endif
 
 distclean-local:
